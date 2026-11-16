@@ -146,14 +146,38 @@ installed). Two local test pages on 127.0.0.1:8899 — `/red.html`
   3.2): the dev VM's egress proxy refuses Chromium's CONNECT, so E2E
   used local test pages. After deploy, verify with a real page
   (e.g. ask Quinn to open https://www.zhihu.com/hot).
-- **Tarball re-sync wipes profiles** (see §2 caveat) — only the
-  fallback path, not the normal git-pull path.
+- **Tarball re-sync wipes profiles — FIXED 2026-11-16 (unpushed):**
+  `sync_from_tarball` in `deploy.sh` now backs up `/root/tree/data`
+  (SQLite DB, browser profiles, screenshots) to `/tmp` before `rm -rf`
+  and restores it after extraction, alongside the existing `.env` backup;
+  verified in a sandbox (`.env` + DB + profile + screenshot all survive,
+  new code still lands, no-`data/` case also passes, `bash -n` clean).
+  Still unpushed — the next deploy must pick up this fix before the
+  fallback path can ever run. The normal git-pull path was always safe.
 - Forge / Ledger / Brief bots do not exist yet in Tree; their displays
   (:13–:15) and profile slots are reserved and will work automatically
   when the bots are created.
 - Testing note: `pkill -f "Xvfb :12"` matches the shell's own command
   line and kills it too — use `pkill -f "^Xvfb :12"` instead. (Bit me
   during the fallback test; the display still died as intended.)
+
+## 2026-11-16 evening fix — step 4c installed only headless shell (found on the server)
+
+After the user deployed commit 06810a1, Quinn reported: `browse_page`
+could only use the headless shell; the full Chromium binary
+(`chromium-1255/chrome-linux64/chrome`) was missing, so headed launches
+on the bots' virtual screens failed and browse_page fell back to
+headless. Root cause: step 4c of `deploy.sh` installed ONLY
+`chromium-headless-shell` — written in step 3.2, before headed browsing
+existed. Fix (local, unpushed at time of writing): step 4c now installs
+BOTH `chromium` (full build, needed for headed mode) and
+`chromium-headless-shell`, npmmirror first, official CDN fallback, and
+adds a smoke check that the full binary actually exists
+(`chromium.executablePath()` + `fs.existsSync`, prints
+`full chromium ok: <path>`). Verified: `bash -n deploy.sh` passes; the
+check prints `full chromium ok` on the dev VM (which has the full
+build). The same push also carries the tarball data-backup fix from
+2026-11-16 14:04 (unpushed at the time). One re-deploy picks up both.
 
 ## What the user must do on the server (after review and push)
 

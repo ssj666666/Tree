@@ -54,13 +54,21 @@ fi
 echo "== 3. code =="
 sync_from_tarball() {
   # Fresh copy from a source tarball (used only when git cannot reach any
-  # remote). Preserves /root/tree/.env if it already exists.
+  # remote). Preserves /root/tree/.env and /root/tree/data if they exist:
+  # data/ holds the SQLite database, each bot's browser profile (logins)
+  # and screenshots — wiping it would log every bot out and erase memory.
+  # The tarball only contains git-tracked files and data/ is gitignored,
+  # so the restore can never clash with extracted files.
+  rm -rf /tmp/tree-env-backup /tmp/tree-data-backup
   [ -f /root/tree/.env ] && cp /root/tree/.env /tmp/tree-env-backup
+  [ -d /root/tree/data ] && cp -a /root/tree/data /tmp/tree-data-backup
   curl -fsSL --max-time 60 https://ghproxy.net/https://codeload.github.com/ssj666666/Tree/tar.gz/refs/heads/main -o /tmp/tree.tar.gz
   rm -rf /root/tree
   mkdir -p /root/tree
   tar -xzf /tmp/tree.tar.gz -C /root/tree --strip-components=1
   [ -f /tmp/tree-env-backup ] && cp /tmp/tree-env-backup /root/tree/.env
+  if [ -d /tmp/tree-data-backup ]; then mkdir -p /root/tree/data && cp -a /tmp/tree-data-backup/. /root/tree/data/; fi
+  rm -rf /tmp/tree-env-backup /tmp/tree-data-backup
   cd /root/tree
   echo "note: installed from tarball, no .git — future updates need a fresh download"
 }
@@ -135,17 +143,25 @@ fi
 
 npm run build
 
-echo "== 4c. Playwright browser (headless Chromium, for browse_page) =="
-# Step 3.2: the browse_page tool needs a real Chromium. Playwright's
-# install-deps/--with-deps only knows apt (Debian/Ubuntu), so on this
-# dnf-based system install the runtime libraries by hand (package names
-# mapped from Playwright's own rpm.deps for chromium-headless-shell),
-# then download the browser. npmmirror hosts a Playwright mirror, tried
-# first because the official CDN is often slow/unreachable from mainland
-# servers; the official CDN is the fallback. Browsers go to the default
-# cache (~/.cache/ms-playwright), NOT inside /root/tree, so a code
-# re-sync never wipes them. NOTHING here may kill the deploy (set -e):
-# without a browser, browse_page just reports an error at runtime.
+echo "== 4c. Playwright browser (full Chromium + headless shell, for browse_page) =="
+# Step 3.2 + 3.4: browse_page needs a real Chromium. Headed mode (each bot
+# browses on its own virtual screen) needs the FULL Chromium build
+# (chromium-*/chrome-linux64/chrome); headless mode uses the smaller
+# headless-shell build. Step 4c used to install ONLY the headless shell,
+# so headed launches failed with "Executable doesn't exist" and browse_page
+# silently fell back to headless — that is the 2026-11-16 Zhihu bug
+# (Quinn could screenshot, but only the login wall, and only headless).
+# Install BOTH builds (npmmirror first, official CDN fallback).
+# Playwright's install-deps/--with-deps only knows apt (Debian/Ubuntu),
+# so on this dnf-based system install the runtime libraries by hand
+# (package names mapped from Playwright's own rpm.deps for
+# chromium-headless-shell), then download the browsers. npmmirror hosts a
+# Playwright mirror, tried first because the official CDN is often
+# slow/unreachable from mainland servers; the official CDN is the fallback.
+# Browsers go to the default cache (~/.cache/ms-playwright), NOT inside
+# /root/tree, so a code re-sync never wipes them. NOTHING here may kill
+# the deploy (set -e): without a browser, browse_page just reports an
+# error at runtime.
 # glibc: the bundled Chromium 159 needs at most GLIBC_2.25 (verified
 # 2026-11-16 with readelf), the server has glibc 2.32 — it should run.
 # UNVERIFIED on the server until this step runs there.
@@ -155,11 +171,16 @@ if command -v dnf >/dev/null 2>&1; then
 elif command -v apt-get >/dev/null 2>&1; then
   npx playwright install-deps chromium-headless-shell 2>/dev/null || echo "WARNING: playwright install-deps failed — see the smoke test below"
 fi
+if ! PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright npx playwright install chromium 2>/dev/null; then
+  echo "npmmirror full-Chromium download failed, trying the official CDN..."
+  npx playwright install chromium 2>/dev/null || echo "WARNING: full Chromium download failed — headed browsing unavailable, browse_page will fall back to headless"
+fi
 if ! PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright npx playwright install chromium-headless-shell 2>/dev/null; then
-  echo "npmmirror Playwright download failed, trying the official CDN..."
-  npx playwright install chromium-headless-shell 2>/dev/null || echo "WARNING: Playwright browser download failed — browse_page will report an error until it is installed (re-run this step manually)"
+  echo "npmmirror headless-shell download failed, trying the official CDN..."
+  npx playwright install chromium-headless-shell 2>/dev/null || echo "WARNING: Playwright headless-shell download failed — browse_page will report an error until it is installed (re-run this step manually)"
 fi
 node --input-type=module -e "import('playwright').then(async ({chromium}) => { const b = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] }); await b.close(); console.log('browser ok'); }).catch((e) => { console.error('browser launch failed:', e.message); process.exit(1); })" 2>/dev/null || echo "WARNING: headless Chromium did not launch — browse_page will report an error (check the missing .so in the output above)"
+node --input-type=module -e "import('playwright').then(async ({chromium}) => { const fs = await import('fs'); const p = chromium.executablePath(); console.log(fs.existsSync(p) ? 'full chromium ok: ' + p : 'WARNING: full Chromium binary missing at ' + p + ' — headed browsing unavailable, browse_page will fall back to headless'); })" 2>/dev/null || echo "WARNING: could not check the full Chromium binary"
 
 echo "== 4d. Virtual screens (Xvfb, one display per bot) =="
 # Step 3.4 (bot-hq model): each bot gets its own virtual display and its

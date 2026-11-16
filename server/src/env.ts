@@ -36,6 +36,20 @@ export const env = {
   adminPasswordHash: process.env.TREE_ADMIN_PASSWORD_HASH ?? '',
   /** Optional: Bocha web-search API key. Empty = web_search tells the bot search is not configured. */
   bochaKey: opt('BOCHA_API_KEY'),
+  /** Step 4 — voice (Alibaba Bailian / DashScope, domestic ASR -> DeepSeek -> TTS).
+      DASHSCOPE_API_KEY empty = voice endpoints report "not configured"; text chat still works. */
+  dashscopeKey: opt('DASHSCOPE_API_KEY'),
+  /** Step 4 — Bailian workspace ID: the first label of the
+      `{WorkspaceId}.cn-beijing.maas.aliyuncs.com` domain (find it in the
+      Bailian console under 业务空间， or in the wss URL of your own sample
+      code). Empty = fall back to the shared dashscope.aliyuncs.com domain. */
+  dashscopeWorkspaceId: process.env.DASHSCOPE_WORKSPACE_ID ?? '',
+  /** Step 4 — TTS model + voice, ASR model. Voice longyingtao_v3 is the
+      customer-service female voice （温柔淡定女）; longyingmu_v3 is the
+      one-line alternative (change TREE_TTS_VOICE only). */
+  ttsModel: process.env.TREE_TTS_MODEL ?? 'cosyvoice-v3-flash',
+  ttsVoice: process.env.TREE_TTS_VOICE ?? 'longyingtao_v3',
+  asrModel: process.env.TREE_ASR_MODEL ?? 'qwen3-asr-flash',
   /** Step 3.1 — "local hands": the workspace the bots may act on. */
   workspace: process.env.TREE_WORKSPACE ?? '/root/tree',
   /** Step 3.2 — headless browser: optional path to a system Chromium binary.
