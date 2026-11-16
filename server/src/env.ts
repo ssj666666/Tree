@@ -42,6 +42,15 @@ export const env = {
   ttsModel: process.env.TREE_TTS_MODEL ?? 'cosyvoice-v3-flash',
   ttsVoice: process.env.TREE_TTS_VOICE ?? 'longyingtao_v3',
   asrModel: process.env.TREE_ASR_MODEL ?? 'qwen3-asr-flash',
+  /** Step 6 — email (IMAP/SMTP, one mailbox, e.g. Tencent Exmail).
+      Empty = the email tools report "not configured"; text chat still works. */
+  emailImapHost: opt('TREE_EMAIL_IMAP_HOST'),
+  emailImapPort: Number(process.env.TREE_EMAIL_IMAP_PORT ?? 993),
+  emailImapUser: opt('TREE_EMAIL_USER'),
+  emailImapPass: opt('TREE_EMAIL_PASS'),
+  emailSmtpHost: opt('TREE_EMAIL_SMTP_HOST'),
+  emailSmtpPort: Number(process.env.TREE_EMAIL_SMTP_PORT ?? 465),
+  emailFrom: process.env.TREE_EMAIL_FROM ?? '',
   /** Step 3.1 — "local hands": the workspace the bots may act on. */
   workspace: process.env.TREE_WORKSPACE ?? '/root/tree',
   /** Step 3.2 — headless browser: optional path to a system Chromium binary.

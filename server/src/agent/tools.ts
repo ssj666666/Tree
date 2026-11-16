@@ -11,6 +11,7 @@ import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes
 import { bochaSearch } from './websearch.js';
 import { fetchPage, readFile, runShell, writeFile } from './localtools.js';
 import { browsePage, takeScreenshot } from './browsertools.js';
+import { draftEmail, readEmail, readInbox, sendEmail } from './emailtools.js';
 import { setCheckins } from '../proactive.js';
 import { createSubagent, deleteSubagent, listSubagents } from './subagents.js';
 import { createRoom, postToRoom } from './rooms.js';
@@ -117,6 +118,45 @@ export const TOOLS: ToolDef[] = [
     activity: 'reading_web',
     label: 'Opening a page',
     impl: async (a) => ({ output: await fetchPage(String(a.url ?? '')), summary: 'Opened a page' }),
+  },
+  // Step 6 — email (one mailbox over IMAP/SMTP). Sending is draft-first:
+  // draft_email creates the draft, the user approves it in chat, and only
+  // then does send_email send that draft (once). There is no direct-send tool.
+  {
+    name: 'read_inbox',
+    description: 'List the most recent emails in the inbox (sender, subject, date, snippet). Use to check what came in. If email is not configured, the result says so: tell the user and do not invent emails.',
+    parameters: obj({ limit: { type: 'integer', description: 'How many recent emails (1-20, default 10)' } }),
+    activity: 'reading_web',
+    label: 'Reading email',
+    impl: async (a) => ({ output: await readInbox(Number(a.limit ?? 10)), summary: 'Read inbox' }),
+  },
+  {
+    name: 'read_email',
+    description: 'Read one email in full by its uid (from read_inbox). Returns sender, subject, date and the text body (capped at ~8000 characters) plus attachment names.',
+    parameters: obj({ uid: { type: 'integer', description: 'The uid from read_inbox' } }, ['uid']),
+    activity: 'reading_web',
+    label: 'Reading email',
+    impl: async (a) => ({ output: await readEmail(Number(a.uid)), summary: 'Read an email' }),
+  },
+  {
+    name: 'draft_email',
+    description: 'Write an email draft (does NOT send). Show the draft to the user first; only call send_email after the user explicitly says to send that draft.',
+    parameters: obj({ to: { type: 'string', description: 'Recipient email address' }, subject: { type: 'string' }, body: { type: 'string', description: 'Plain-text body' } }, ['to', 'subject', 'body']),
+    activity: 'drafting_file',
+    label: 'Drafting email',
+    impl: async (a, ctx) => {
+      const r = draftEmail(ctx.userId, ctx.botId, String(a.to ?? ''), String(a.subject ?? ''), String(a.body ?? ''));
+      if ('error' in r) return { output: r.error };
+      return { output: JSON.stringify({ draft_id: r.id, to: r.to, subject: r.subject, preview: r.body.slice(0, 300) }), summary: 'Drafted an email' };
+    },
+  },
+  {
+    name: 'send_email',
+    description: 'Send a draft created by draft_email, by its draft_id. Only call this after the user has seen the draft and explicitly said to send it. Each draft can only be sent once.',
+    parameters: obj({ draft_id: { type: 'string', description: 'The draft_id from draft_email' } }, ['draft_id']),
+    activity: 'messaging_named',
+    label: 'Sending email',
+    impl: async (a, ctx) => ({ output: await sendEmail(ctx.userId, String(a.draft_id ?? '')), summary: 'Sent an email' }),
   },
   {
     name: 'browse_page',
