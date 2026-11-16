@@ -141,6 +141,9 @@ else
   node -e "new (require('/root/tree/node_modules/better-sqlite3'))(':memory:'); console.log('sqlite ok')"
 fi
 
+# tsc never deletes outputs of removed sources: wipe both dist dirs first,
+# or deleted files (e.g. server/dist/orgo.js after step 4.2) would linger.
+rm -rf server/dist web/dist
 npm run build
 
 echo "== 4c. Playwright browser (full Chromium + headless shell, for browse_page) =="

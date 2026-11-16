@@ -19,14 +19,6 @@ export const env = {
   deepseekModel: process.env.DEEPSEEK_MODEL ?? 'deepseek-flash',
   /** Optional: Composio (app connections). Empty = app connections disabled, text chat still works. */
   composioKey: opt('COMPOSIO_API_KEY'),
-  /** Optional: Orgo cloud computers. Empty = no cloud computer, text chat still works. */
-  orgoKey: opt('ORGO_API_KEY'),
-  /** Orgo workspace that holds every user's box. */
-  orgoWorkspaceId: process.env.ORGO_WORKSPACE_ID ?? '',
-  /** Orgo box size for new users. */
-  orgoRamGb: Number(process.env.ORGO_RAM_GB ?? 8),
-  orgoCpu: Number(process.env.ORGO_CPU ?? 2),
-  orgoResolution: process.env.ORGO_RESOLUTION ?? '1280x800x24',
   /** Unused by the current auth flow (dev login only); kept for compatibility, defaults to a dev value. */
   sessionSecret: process.env.SESSION_SECRET ?? 'tree-dev-secret-change-me',
   devLogin: process.env.DEV_LOGIN === '1',

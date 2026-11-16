@@ -24,7 +24,6 @@ interface State {
   detailsOpen: boolean;
   sidebarCollapsed: boolean;
   modal: ModalKind;
-  viewerOpen: boolean;
 
   checkAuth(): Promise<void>;
   loadBots(): Promise<void>;
@@ -59,7 +58,6 @@ export const useStore = create<State>((set, get) => ({
   detailsOpen: lsGet(LS_DETAILS) !== '0',
   sidebarCollapsed: lsGet(LS_SIDEBAR) === '1',
   modal: null,
-  viewerOpen: false,
 
   async checkAuth() {
     try {

@@ -4,9 +4,10 @@ import { suspendComputer } from './computer.js';
 import { isBotBusy } from './agent/loop.js';
 
 /**
- * Computer hibernation: suspend a user's Orgo box when no bot turn is running and no
- * viewer WebSocket is connected for TREE_IDLE_SUSPEND_MIN minutes (default 20).
- * The next computer tool call wakes it again through ensureComputer().
+ * Computer hibernation (step 4.2: inert — the computer is this local server,
+ * which never sleeps, so the watcher below never finds a computer to suspend).
+ * Kept in place in case a sleeping computer ever comes back; the next computer
+ * tool call wakes it again through ensureComputer().
  */
 
 const num = (v: string | undefined, d: number) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : d);

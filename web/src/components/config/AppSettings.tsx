@@ -101,46 +101,33 @@ function GeneralSection() {
 
 // ---------------------------------------------------------------------------
 
-const screenLabel = (id: string) => (id === 'default' ? 'Main screen' : `Screen ${Number(id.replace('screen-', '')) - 98 || id}`);
+const screenLabel = (id: string) => (id === 'default' ? 'Main screen' : id.startsWith(':') ? `Display ${id.slice(1)}` : `Screen ${Number(id.replace('screen-', '')) - 98 || id}`);
 
 function ComputerSection() {
   const computer = useStore((s) => s.computer);
   const bots = useStore((s) => s.bots);
   const [details, setDetails] = useState<ComputerDetails | null>(null);
-  const [busy, setBusy] = useState<'wake' | 'sleep' | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const load = useCallback(() => { configApi.computerDetails().then(setDetails).catch(() => {}); }, []);
   useEffect(() => { load(); }, [load, computer?.status, computer?.screens.length]);
 
   const status = computer?.status ?? details?.computer.status;
-  const running = status === 'running';
-  const transitioning = status === 'starting' || status === 'resuming' || status === 'creating' || status === 'suspending';
-  const act = async (kind: 'wake' | 'sleep') => {
-    setBusy(kind); setNote(null);
-    try { kind === 'wake' ? await configApi.wake() : await configApi.sleep(); }
-    catch (e) { setNote((e as Error).message); }
-    finally { setBusy(null); }
-  };
   const byId = new Map(bots.map((b) => [b.id, b]));
 
   return (
     <>
-      <PageHead title="Computer" sub="Your Bots share one cloud computer. Each Bot works on its own screen." />
+      <PageHead title="Computer" sub="Your Bots share this server. Each Bot works on its own virtual screen." />
       <section className="cfg-section">
         <div className="cfg-card">
           <div className="cfg-row">
-            <span className={`computer-status-dot is-${running ? 'on' : transitioning ? 'busy' : 'off'}`} aria-hidden />
+            <span className="computer-status-dot is-on" aria-hidden />
             <div className="cfg-row__text">
               <div className="cfg-row__title">Bots’ computer · {computerStatusText(computer ?? null)}</div>
               <div className="cfg-row__sub">
-                {details ? `Goes to sleep after ${details.hibernation.idleMinutes} idle minutes when nobody is watching. Starts again on its own once a Bot has work.` : 'Checking…'}
+                This computer is the server itself — it stays awake around the clock and never sleeps.
               </div>
             </div>
-            {running || status === 'suspending' ? (
-              <button type="button" className="cfg-btn cfg-btn--secondary" disabled={!running || !!busy} onClick={() => act('sleep')}>{busy === 'sleep' || status === 'suspending' ? 'Going to sleep…' : 'Sleep'}</button>
-            ) : (
-              <button type="button" className="cfg-btn cfg-btn--primary" disabled={transitioning || !!busy} onClick={() => act('wake')}>{busy === 'wake' || transitioning ? 'Waking…' : 'Wake'}</button>
-            )}
+            <span className="cfg-chip">Always awake</span>
           </div>
           {computer?.error && status === 'error' && <div className="cfg-error cfg-error--inset">{computer.error}</div>}
           {note && <div className="cfg-error cfg-error--inset">{note}</div>}
@@ -164,8 +151,7 @@ function ComputerSection() {
                 <ConfirmButton
                   className="cfg-btn cfg-btn--secondary"
                   confirmLabel="Reset screen"
-                  disabled={!running}
-                  title={running ? 'Closes everything open on this screen' : 'Wake the computer first'}
+                  title="Closes the Bot's browser windows so it starts clean"
                   onConfirm={async () => { try { await configApi.resetScreen(s.botId); setNote(null); load(); } catch (e) { setNote((e as Error).message); } }}
                 >
                   Reset
@@ -174,7 +160,7 @@ function ComputerSection() {
             );
           })}
         </div>
-        <div className="cfg-field__hint">Reset closes every window on that Bot’s screen, so it starts clean next time. Up to 4 Bots can have a screen at once.</div>
+        <div className="cfg-field__hint">Reset closes the Bot's browser windows, so it starts clean next time. Each Bot has its own virtual screen (Quinn :11, Scout :12, and so on).</div>
       </section>
     </>
   );

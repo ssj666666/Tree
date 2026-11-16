@@ -54,7 +54,6 @@ function RoutineRow({ r }: { r: Routine }) {
 
 function ComputerCard({ bot }: { bot: Bot }) {
   const computer = useStore((s) => s.computer);
-  const set = useStore((s) => s.set);
   const [shot, setShot] = useState<string | null>(null);
   const running = computer?.status === 'running';
 
@@ -88,7 +87,7 @@ function ComputerCard({ bot }: { bot: Bot }) {
   const busy = computer?.status === 'starting' || computer?.status === 'resuming' || computer?.status === 'creating';
   return (
     <div className="panel-card">
-      <div className="panel-row panel-row--computer" role="button" tabIndex={0} onClick={() => set({ viewerOpen: true })} onKeyDown={(e) => { if (e.key === 'Enter') set({ viewerOpen: true }); }}>
+      <div className="panel-row panel-row--computer">
         <span className="panel-row__text">
           <span className="panel-row__title">Bot's computer</span>
           <span className="panel-row__meta">{computerStatusText(computer)}{computer?.error && computer.status === 'error' ? ` · ${computer.error}` : ''}</span>

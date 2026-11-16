@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
+import fs from 'node:fs';
 import { db, now } from './db.js';
 import { env } from './env.js';
 import { newId } from './lib/ids.js';
@@ -9,7 +10,7 @@ import { verifyPassword } from './lib/password.js';
 import { allLive, appendRow, clearConversation, emitBot, getBot, getBotRow, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow } from './store.js';
 import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
 import { computerState, ensureComputer, refreshComputer, suspendComputer } from './computer.js';
-import { orgo } from './orgo.js';
+import { botScreen } from './agent/browsertools.js';
 import { catalog, connectedToolkits, disconnect, startConnect, toolkitInfo } from './composio.js';
 import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
@@ -322,17 +323,16 @@ api.post('/computer/suspend', async (c) => {
   return c.json({ computer: computerState(c.get('user').id) });
 });
 
-api.get('/bots/:id/screenshot', async (c) => {
+api.get('/bots/:id/screenshot', (c) => {
   const user = c.get('user');
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const comp = db.prepare("SELECT orgo_id FROM computers WHERE user_id=? AND status='running'").get(user.id) as any;
-  const scr = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(b.id) as any;
-  if (!comp?.orgo_id || !scr) return c.body(null, 204);
+  // Step 4.2: the panel thumbnail is the bot's latest LOCAL screenshot
+  // (data/screenshots/<bot>-latest.png, written by browse_page/take_screenshot).
+  const shot = botScreen({ id: b.id, name: b.name }).screenshotPath;
   try {
-    const s = await orgo.screenshot(comp.orgo_id, scr.screen_id);
-    const b64 = s.image.replace(/^data:[^,]+,/, '');
-    return c.body(Buffer.from(b64, 'base64'), 200, { 'Content-Type': s.mime_type ?? 'image/jpeg', 'Cache-Control': 'no-store' });
+    if (!fs.existsSync(shot)) return c.body(null, 204);
+    return c.body(fs.readFileSync(shot), 200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
   } catch {
     return c.body(null, 204);
   }

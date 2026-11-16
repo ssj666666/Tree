@@ -1,8 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { db, now } from '../db.js';
+import { env } from '../env.js';
 import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
-import { orgo } from '../orgo.js';
-import { screenFor } from '../computer.js';
 import { appendRow, getBotRow, listRoutines, toRoutine, describeCron } from '../store.js';
 import { executeComposio, innerToolSlugs, isReadOnlySlug, toolkitInfo } from '../composio.js';
 import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
@@ -44,151 +45,11 @@ interface ToolDef {
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });
 
-async function shot(ctx: ToolCtx, caption: string): Promise<ToolResult> {
-  const { computerId, screenId } = await screenFor(ctx.userId, ctx.botId);
-  await new Promise((r) => setTimeout(r, 700));
-  const s = await orgo.screenshot(computerId, screenId);
-  const mime = s.mime_type ?? 'image/png';
-  const url = s.image.startsWith('data:') ? s.image : `data:${mime};base64,${s.image}`;
-  return {
-    output: [
-      { type: 'input_text', text: `${caption} Screen is ${s.width}x${s.height}px.` },
-      { type: 'input_image', image_url: url, detail: 'high' },
-    ],
-    summary: caption,
-  };
-}
-
-async function onScreen<T>(ctx: ToolCtx, fn: (computerId: string, screenId: string) => Promise<T>) {
-  const { computerId, screenId } = await screenFor(ctx.userId, ctx.botId);
-  return fn(computerId, screenId);
-}
-
 function botByName(userId: string, name: string) {
   return db.prepare('SELECT * FROM bots WHERE user_id=? AND lower(name)=lower(?)').get(userId, name.trim()) as any;
 }
 
 export const TOOLS: ToolDef[] = [
-  {
-    name: 'computer_screenshot',
-    description: "Take a screenshot of your own computer screen (a Linux desktop that only you use). Use this before acting on the screen.",
-    parameters: obj({}),
-    activity: 'on_its_computer',
-    label: 'Looking at the screen',
-    impl: async (_a, ctx) => shot(ctx, 'Current screen.'),
-  },
-  {
-    name: 'computer_click',
-    description: 'Click at pixel coordinates on your screen. Returns a fresh screenshot.',
-    parameters: obj({ x: { type: 'integer' }, y: { type: 'integer' }, button: { type: 'string', enum: ['left', 'right', 'middle'] }, double: { type: 'boolean' } }, ['x', 'y']),
-    activity: 'on_its_computer',
-    label: 'Clicking on screen',
-    impl: async (a, ctx) => {
-      await onScreen(ctx, (c, s) => orgo.click(c, s, { x: a.x, y: a.y, button: a.button ?? 'left', double: !!a.double }));
-      return shot(ctx, `Clicked (${a.x}, ${a.y}).`);
-    },
-  },
-  {
-    name: 'computer_type',
-    description: 'Type text into the focused element on your screen. Returns a fresh screenshot.',
-    parameters: obj({ text: { type: 'string' } }, ['text']),
-    activity: 'on_its_computer',
-    label: 'Typing',
-    impl: async (a, ctx) => {
-      const text = String(a.text);
-      for (let i = 0; i < text.length; i += 1500) await onScreen(ctx, (c, s) => orgo.type(c, s, text.slice(i, i + 1500)));
-      return shot(ctx, `Typed ${text.length} characters.`);
-    },
-  },
-  {
-    name: 'computer_key',
-    description: 'Press a key or key combination using X11 keysym names joined by "+", e.g. "Return", "ctrl+l", "ctrl+shift+t", "BackSpace", "Escape", "Page_Down".',
-    parameters: obj({ keys: { type: 'string' } }, ['keys']),
-    activity: 'on_its_computer',
-    label: 'Pressing keys',
-    impl: async (a, ctx) => {
-      const keys = String(a.keys).split('+').map((k) => (k.length === 1 ? k.toLowerCase() : k)).join('+');
-      await onScreen(ctx, (c, s) => orgo.key(c, s, keys));
-      return shot(ctx, `Pressed ${keys}.`);
-    },
-  },
-  {
-    name: 'computer_scroll',
-    description: 'Scroll the mouse wheel at a position on your screen.',
-    parameters: obj({ x: { type: 'integer' }, y: { type: 'integer' }, direction: { type: 'string', enum: ['up', 'down'] }, amount: { type: 'integer' } }, ['x', 'y', 'direction']),
-    activity: 'on_its_computer',
-    label: 'Scrolling',
-    impl: async (a, ctx) => {
-      await onScreen(ctx, (c, s) => orgo.scroll(c, s, { x: a.x, y: a.y, direction: a.direction, amount: a.amount ?? 3 }));
-      return shot(ctx, `Scrolled ${a.direction}.`);
-    },
-  },
-  {
-    name: 'computer_drag',
-    description: 'Drag with the left mouse button from one point to another on your screen.',
-    parameters: obj({ start_x: { type: 'integer' }, start_y: { type: 'integer' }, end_x: { type: 'integer' }, end_y: { type: 'integer' } }, ['start_x', 'start_y', 'end_x', 'end_y']),
-    activity: 'on_its_computer',
-    label: 'Dragging',
-    impl: async (a, ctx) => {
-      await onScreen(ctx, (c, s) => orgo.drag(c, s, a));
-      return shot(ctx, 'Dragged.');
-    },
-  },
-  {
-    name: 'open_browser',
-    description: 'Open a URL in a Chrome window on your screen (your own logged-in browser profile persists between uses). Returns a screenshot.',
-    parameters: obj({ url: { type: 'string' } }, ['url']),
-    activity: 'browsing_web',
-    label: 'Browsing a site',
-    impl: async (a, ctx) => {
-      const url = String(a.url).replace(/'/g, '%27');
-      await onScreen(ctx, (c, s) => {
-        const display = s === 'default' ? ':99' : `:${s.replace('screen-', '')}`;
-        const profile = `/root/tree/profiles/${ctx.botId}`;
-        // Reuse the bot's running Chrome if present (opens a new tab), else start one detached.
-        return orgo.bash(
-          c,
-          s,
-          `export DISPLAY=${display}; mkdir -p ${profile}; pgrep -f "user-data-dir=${profile}" >/dev/null || rm -f ${profile}/Singleton*; ` +
-            `setsid nohup google-chrome --no-sandbox --no-first-run --no-default-browser-check --disable-dev-shm-usage --password-store=basic ` +
-            `--user-data-dir=${profile} --start-maximized '${url}' >/tmp/chrome-${ctx.botId}.log 2>&1 < /dev/null & sleep 4; echo ok`,
-          40,
-        );
-      });
-      return shot(ctx, `Opened ${a.url}.`);
-    },
-  },
-  {
-    name: 'save_file',
-    description: "Save a deliverable (report, notes, CSV, code, markdown) to your Library so the user can open and download it. Saved under /root/tree/files/<your id>/ on your computer.",
-    parameters: obj({ filename: { type: 'string', description: 'e.g. briefing-2026-11-09.md' }, content: { type: 'string' } }, ['filename', 'content']),
-    activity: 'drafting_file',
-    label: 'Saving notes',
-    impl: async (a, ctx) => {
-      const name = String(a.filename).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'file.txt';
-      const dir = `/root/tree/files/${ctx.botId}`;
-      const b64 = Buffer.from(String(a.content), 'utf8').toString('base64');
-      // Chunk the base64 so very large files don't exceed a single command's size.
-      await onScreen(ctx, async (c, s) => {
-        await orgo.bash(c, s, `mkdir -p ${dir} && : > ${dir}/${name}.b64`, 30);
-        for (let i = 0; i < b64.length; i += 60000) await orgo.bash(c, s, `printf '%s' '${b64.slice(i, i + 60000)}' >> ${dir}/${name}.b64`, 30);
-        return orgo.bash(c, s, `base64 -d ${dir}/${name}.b64 > ${dir}/${name} && rm ${dir}/${name}.b64 && wc -c ${dir}/${name}`, 30);
-      });
-      return { output: JSON.stringify({ ok: true, path: `${dir}/${name}` }), summary: `Saved ${name}` };
-    },
-  },
-  {
-    name: 'shell',
-    description: 'Run a bash command on your own Linux computer (as root). Use for files, scripts, CLIs and quick data work. Output is truncated to 20k characters.',
-    parameters: obj({ command: { type: 'string' }, timeout_seconds: { type: 'integer' } }, ['command']),
-    activity: 'running_commands',
-    label: 'Running commands',
-    impl: async (a, ctx) => {
-      const r = await onScreen(ctx, (c, s) => orgo.bash(c, s, String(a.command), Math.min(Math.max(a.timeout_seconds ?? 120, 1), 290)));
-      const out = (r.output ?? '').slice(-20000);
-      return { output: JSON.stringify({ exit_code: r.exit_code, output: out }), summary: `exit ${r.exit_code}` };
-    },
-  },
   {
     name: 'remember',
     description: 'Save a durable memory about the user, their preferences, or your job, so you remember it in future conversations.',
@@ -272,6 +133,30 @@ export const TOOLS: ToolDef[] = [
     activity: 'reading_web',
     label: 'Taking a screenshot',
     impl: async (_a, ctx) => ({ output: await takeScreenshot({ id: ctx.botId, name: getBotName(ctx.botId) }), summary: 'Took a screenshot' }),
+  },
+  {
+    name: 'save_file',
+    description: "Save a deliverable (report, notes, CSV, code, markdown) to your Library so the user can open and download it. Saved under files/<your id>/ in the workspace on this server — the Library tab lists it there.",
+    parameters: obj({ filename: { type: 'string', description: 'e.g. briefing-2026-11-09.md' }, content: { type: 'string' } }, ['filename', 'content']),
+    activity: 'drafting_file',
+    label: 'Saving notes',
+    impl: async (a, ctx) => {
+      const name = String(a.filename).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'file.txt';
+      if (name === '.env' || name.endsWith('.key') || name.endsWith('.pem') || name.includes('password')) {
+        return { output: 'Refused: credential files cannot be saved this way.' };
+      }
+      const content = String(a.content ?? '');
+      if (content.length > 5_000_000) return { output: 'Refused: file is too large (over 5 MB of text). Split it or save it in parts.' };
+      const dir = path.join(path.resolve(env.workspace), 'files', ctx.botId);
+      const target = path.join(dir, name);
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(target, content, 'utf8');
+      } catch (e: any) {
+        return { output: `Could not save ${name}: ${e?.message ?? e}` };
+      }
+      return { output: JSON.stringify({ ok: true, path: `files/${ctx.botId}/${name}` }), summary: `Saved ${name}` };
+    },
   },
   {
     name: 'create_routine',

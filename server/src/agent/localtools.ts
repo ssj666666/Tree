@@ -6,9 +6,9 @@ import { env } from '../env.js';
 /**
  * Tree step 3.1 — "local hands".
  *
- * The bots run on this Linux server, so they can act on it directly instead
- * of through a (not connected) Orgo cloud computer: run shell commands,
- * read/write files in the workspace, and fetch web pages as plain text.
+ * The bots run on this Linux server, so they can act on it directly:
+ * run shell commands, read/write files in the workspace, and fetch web
+ * pages as plain text. (Orgo cloud computers were removed in step 4.2.)
  *
  * Safety (the server runs as root — take this seriously):
  * - Everything is scoped to the workspace directory (env TREE_WORKSPACE,

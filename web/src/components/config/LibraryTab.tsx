@@ -7,7 +7,7 @@ import { Icon } from '../Icon';
 import { Glyph } from './glyphs';
 import { formatBytes } from './ui';
 
-/** Files the bot saved under /root/tree/files/<botId> on its computer. */
+/** Files the bot saved under files/<botId> in the workspace on this server. */
 export function LibraryTab({ bot }: { bot: Bot }) {
   const awake = useStore((s) => s.computer?.status === 'running');
   const [path, setPath] = useState('');

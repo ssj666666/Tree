@@ -1,12 +1,17 @@
 import { Hono } from 'hono';
+import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import { db, now } from './db.js';
+import { env } from './env.js';
 import './db-config.js';
 import { newId } from './lib/ids.js';
 import { hub } from './lib/hub.js';
 import { requireUser, type AuthVars } from './lib/auth.js';
 import { getBotRow, listRoutines, listTasks } from './store.js';
-import { computerState, ensureComputer } from './computer.js';
-import { orgo } from './orgo.js';
+import { computerState } from './computer.js';
+import { botScreen } from './agent/browsertools.js';
 import { runInBotQueue } from './agent/loop.js';
 import { consolidateBot, historySize, maybeCompact, memoryConfig } from './agent/memory.js';
 import { idleConfig, viewerCount } from './idle.js';
@@ -18,6 +23,8 @@ import type { LibraryFile, Memory, Skill } from './types.js';
  * Mounted next to routes.ts in index.ts; every path here needs a signed-in user.
  */
 export const configApi = new Hono<AuthVars>();
+
+const execFileAsync = promisify(execFile);
 
 for (const p of ['/bots/*', '/skills/*', '/computer/*']) configApi.use(p, requireUser);
 
@@ -127,9 +134,10 @@ configApi.post('/bots/:id/compact', async (c) => {
   return c.json({ itemsBefore: before, itemsAfter: after, compacted: after !== before });
 });
 
-// ---------- library: files under /root/tree/files/<botId> on the bot's computer ----------
+// ---------- library: files under <workspace>/files/<botId> on this server ----------
 
-const LIB_ROOT = '/root/tree/files';
+/** The Library root: files the bots save (via save_file) live here. */
+const LIB_ROOT = path.join(path.resolve(env.workspace), 'files');
 
 function safeRel(p: string | undefined): string | null {
   const rel = (p ?? '').replace(/^\/+|\/+$/g, '');
@@ -138,46 +146,41 @@ function safeRel(p: string | undefined): string | null {
   return rel;
 }
 
-const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+/** Resolve a Library path inside the bot's own folder; null when it escapes it. */
+function libPath(botId: string, rel: string): string | null {
+  const base = path.join(LIB_ROOT, botId);
+  const target = path.resolve(base, rel);
+  if (target !== base && !target.startsWith(base + path.sep)) return null;
+  return target;
+}
 
-/** Parse `ls -la --time-style=+%s` output. */
-export function parseLs(out: string): LibraryFile[] {
+function listLibDir(dir: string): LibraryFile[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
   const files: LibraryFile[] = [];
-  for (const line of out.split('\n')) {
-    const m = line.match(/^([-dlcbps])\S*\s+\d+\s+\S+\s+\S+\s+(\d+)\s+(\d+)\s+(.+)$/);
-    if (!m) continue;
-    let name = m[4];
-    if (m[1] === 'l') name = name.replace(/ -> .*$/, '');
-    if (name === '.' || name === '..') continue;
-    files.push({ name, size: Number(m[2]), modifiedAt: Number(m[3]) * 1000, isDir: m[1] === 'd' });
+  for (const e of entries) {
+    try {
+      const st = fs.statSync(path.join(dir, e.name));
+      files.push({ name: e.name, size: st.isDirectory() ? 0 : st.size, modifiedAt: st.mtimeMs, isDir: st.isDirectory() });
+    } catch { /* entry vanished mid-list; skip */ }
   }
   return files.sort((a, b) => Number(b.isDir) - Number(a.isDir) || b.modifiedAt - a.modifiedAt);
 }
 
-/** The bot's computer id if it is awake (or `wake` is set), plus the bot's leased screen if it has one. */
-async function boxFor(userId: string, botId: string, wake: boolean): Promise<{ computerId: string; screenId?: string } | null> {
-  const comp = db.prepare('SELECT orgo_id, status FROM computers WHERE user_id=?').get(userId) as any;
-  let computerId: string | null = comp?.status === 'running' ? comp.orgo_id : null;
-  if (!computerId && wake) computerId = await ensureComputer(userId);
-  if (!computerId) return null;
-  // Use the bot's own screen when it has one; never lease (and evict) a screen just to list files.
-  const scr = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(botId) as any;
-  return { computerId, screenId: scr?.screen_id };
-}
-
-configApi.get('/bots/:id/files', async (c) => {
+configApi.get('/bots/:id/files', (c) => {
   const user = c.get('user');
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const rel = safeRel(c.req.query('path'));
   if (rel === null) return c.json({ error: 'bad path' }, 400);
+  const dir = libPath(b.id, rel);
+  if (!dir) return c.json({ error: 'bad path' }, 400);
   try {
-    const box = await boxFor(user.id, b.id, c.req.query('wake') === '1');
-    if (!box) return c.json({ status: 'asleep', path: rel, files: [] });
-    const dir = `${LIB_ROOT}/${b.id}${rel ? `/${rel}` : ''}`;
-    const r = await orgo.bash(box.computerId, box.screenId, `mkdir -p ${shq(`${LIB_ROOT}/${b.id}`)} && ls -la --time-style=+%s ${shq(dir)} 2>&1`, 30);
-    if (r.exit_code !== 0) return c.json({ status: 'error', path: rel, files: [], error: (r.output ?? '').slice(0, 300) });
-    return c.json({ status: 'ok', path: rel, files: parseLs(r.output ?? '') });
+    return c.json({ status: 'ok', path: rel, files: listLibDir(dir) });
   } catch (e: any) {
     return c.json({ status: 'error', path: rel, files: [], error: String(e?.message ?? e).slice(0, 300) });
   }
@@ -190,13 +193,30 @@ configApi.post('/bots/:id/files/download', async (c) => {
   const { path } = await c.req.json<{ path: string }>().catch(() => ({ path: '' }));
   const rel = safeRel(path);
   if (!rel) return c.json({ error: 'bad path' }, 400);
+  const target = libPath(b.id, rel);
   try {
-    const box = await boxFor(user.id, b.id, true);
-    if (!box) return c.json({ error: 'computer unavailable' }, 409);
-    const r: any = await orgo.exportFile(box.computerId, `${LIB_ROOT}/${b.id}/${rel}`);
-    const url = r?.url ?? r?.file?.url ?? r?.download_url;
-    if (!url) return c.json({ error: 'export returned no link' }, 502);
-    return c.json({ url });
+    if (!target || !fs.existsSync(target) || !fs.statSync(target).isFile()) return c.json({ error: 'file not found' }, 404);
+  } catch {
+    return c.json({ error: 'file not found' }, 404);
+  }
+  return c.json({ url: `/api/bots/${b.id}/files/raw?path=${encodeURIComponent(rel)}` });
+});
+
+/** Stream one Library file back to the browser (same-origin, cookie auth). */
+configApi.get('/bots/:id/files/raw', (c) => {
+  const user = c.get('user');
+  const b = ownBot(user.id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const rel = safeRel(c.req.query('path'));
+  if (!rel) return c.json({ error: 'bad path' }, 400);
+  const target = libPath(b.id, rel);
+  if (!target) return c.json({ error: 'bad path' }, 400);
+  try {
+    if (!fs.existsSync(target) || !fs.statSync(target).isFile()) return c.json({ error: 'file not found' }, 404);
+    const buf = fs.readFileSync(target);
+    if (buf.length > 50_000_000) return c.json({ error: 'file too large to download here' }, 413);
+    const name = path.basename(target);
+    return c.body(buf, 200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${name.replace(/"/g, '')}"`, 'Cache-Control': 'no-store' });
   } catch (e: any) {
     return c.json({ error: String(e?.message ?? e).slice(0, 300) }, 502);
   }
@@ -206,33 +226,39 @@ configApi.post('/bots/:id/files/download', async (c) => {
 
 configApi.get('/computer/details', (c) => {
   const userId = c.get('user').id;
-  const leases = db.prepare('SELECT bot_id, screen_id, last_used_at FROM screens WHERE user_id=? ORDER BY last_used_at DESC').all(userId) as any[];
+  const bots = db.prepare("SELECT id, name, updated_at FROM bots WHERE user_id=? AND kind<>'room'").all(userId) as any[];
+  const screens = bots.map((bot) => {
+    const screen = botScreen({ id: bot.id, name: bot.name });
+    let lastUsedAt = bot.updated_at;
+    try {
+      const st = fs.statSync(screen.screenshotPath);
+      lastUsedAt = Math.max(lastUsedAt, Math.floor(st.mtimeMs));
+    } catch { /* no screenshot yet */ }
+    return { botId: bot.id, screenId: `:${screen.display}`, lastUsedAt };
+  });
   return c.json({
     computer: computerState(userId),
-    screens: leases.map((l) => ({ botId: l.bot_id, screenId: l.screen_id, lastUsedAt: l.last_used_at })),
+    screens,
     hibernation: { idleMinutes: idleConfig.idleMin, viewers: viewerCount(userId), dryRun: idleConfig.dryRun },
   });
 });
 
-/** Give a bot a clean screen: close its windows (default screen) or destroy its extra screen so a fresh one is made next time. */
+/** Give a bot a clean screen: close its browser windows so it starts fresh next time. The Xvfb display itself persists. */
 configApi.post('/bots/:id/screen/reset', async (c) => {
   const user = c.get('user');
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const lease = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(b.id) as any;
-  if (!lease) return c.json({ ok: true, note: 'no screen yet' });
-  const comp = db.prepare("SELECT orgo_id FROM computers WHERE user_id=? AND status='running'").get(user.id) as any;
-  if (!comp?.orgo_id) return c.json({ error: 'Wake the computer first' }, 409);
-  const profile = `/root/tree/profiles/${b.id}`;
+  const screen = botScreen({ id: b.id, name: b.name });
   try {
-    await orgo.bash(comp.orgo_id, undefined, `pkill -f ${shq(`user-data-dir=${profile}`)}; rm -f ${shq(profile)}/Singleton*; echo ok`, 30).catch(() => null);
-    if (lease.screen_id !== 'default') {
-      await orgo.deleteScreen(comp.orgo_id, lease.screen_id).catch((e) => console.warn('[computer] delete screen', e?.message));
-      db.prepare('DELETE FROM screens WHERE bot_id=?').run(b.id);
-    }
-    console.log(`[computer] reset screen ${lease.screen_id} for bot ${b.id}`);
+    await execFileAsync('pkill', ['-f', `user-data-dir=${screen.profileDir}`]).catch(() => null);
+    try {
+      for (const f of fs.readdirSync(screen.profileDir)) {
+        if (f.startsWith('Singleton')) fs.rmSync(path.join(screen.profileDir, f), { force: true });
+      }
+    } catch { /* no profile yet; nothing to clean */ }
+    console.log(`[computer] reset screen :${screen.display} for bot ${b.id}`);
     hub.emit(user.id, { type: 'computer', state: computerState(user.id) });
-    return c.json({ ok: true, screenId: lease.screen_id });
+    return c.json({ ok: true, screenId: `:${screen.display}` });
   } catch (e: any) {
     return c.json({ error: String(e?.message ?? e).slice(0, 300) }, 502);
   }
