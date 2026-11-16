@@ -54,7 +54,7 @@ function scrubbedEnv(): Record<string, string | undefined> {
   return out;
 }
 
-function logCall(entry: Record<string, unknown>): void {
+export function logCall(entry: Record<string, unknown>): void {
   try {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
     fs.appendFileSync(LOG_FILE, JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n');

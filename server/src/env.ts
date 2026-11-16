@@ -38,5 +38,10 @@ export const env = {
   bochaKey: opt('BOCHA_API_KEY'),
   /** Step 3.1 — "local hands": the workspace the bots may act on. */
   workspace: process.env.TREE_WORKSPACE ?? '/root/tree',
+  /** Step 3.2 — headless browser: optional path to a system Chromium binary.
+      Empty = use Playwright's bundled Chromium (installed by deploy.sh step 4c). */
+  chromiumPath: process.env.TREE_CHROMIUM_PATH ?? '',
+  /** Step 3.2 — overall budget for one browse_page call (ms). */
+  browseTimeoutMs: Number(process.env.TREE_BROWSE_TIMEOUT_MS ?? 60_000),
   dbPath: process.env.DB_PATH ?? new URL('../../data/tree.db', import.meta.url).pathname,
 };

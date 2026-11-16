@@ -9,6 +9,7 @@ import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
 import { bochaSearch } from './websearch.js';
 import { fetchPage, readFile, runShell, writeFile } from './localtools.js';
+import { browsePage } from './browsertools.js';
 import { setCheckins } from '../proactive.js';
 import { createSubagent, deleteSubagent, listSubagents } from './subagents.js';
 import { createRoom, postToRoom } from './rooms.js';
@@ -255,6 +256,14 @@ export const TOOLS: ToolDef[] = [
     activity: 'reading_web',
     label: 'Opening a page',
     impl: async (a) => ({ output: await fetchPage(String(a.url ?? '')), summary: 'Opened a page' }),
+  },
+  {
+    name: 'browse_page',
+    description: 'Open a URL in a real headless browser (Chromium) that runs JavaScript, wait for the page to render, and read its visible text (up to ~8000 characters) plus title and key links. Use this when fetch_page returns little or no text, or for JS-heavy pages (e.g. Zhihu hot list, JS-rendered news). It cannot log in, pass captchas, or read paywalled/member-only content: if the page blocks access, the result says so — tell the user instead of guessing.',
+    parameters: obj({ url: { type: 'string', description: 'The http(s) URL to open in the browser' } }, ['url']),
+    activity: 'reading_web',
+    label: 'Browsing a page',
+    impl: async (a) => ({ output: await browsePage(String(a.url ?? '')), summary: 'Browsed a page' }),
   },
   {
     name: 'create_routine',
