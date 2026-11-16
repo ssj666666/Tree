@@ -16,47 +16,20 @@ import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
-import type { AvatarColor, AvatarShape, Toolkit } from './types.js';
+import { createBot, ensureTeamBots } from './team.js';
+import type { Toolkit } from './types.js';
 
 export const api = new Hono<AuthVars>();
-
-const SHAPES: AvatarShape[] = ['blob', 'pebble', 'bean', 'egg', 'squircle', 'tablet', 'capsule', 'cylinder', 'hex', 'gem', 'crystal', 'wedge', 'shield', 'dome', 'arch', 'cloud', 'teardrop', 'leaf', 'square', 'sparkle', 'clover', 'flower', 'heart', 'house', 'star'];
-const COLORS: AvatarColor[] = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet', 'magenta', 'gray'];
-
-function hashPick<T>(id: string, list: T[]): T {
-  let h = 0x811c9dc5;
-  for (const ch of id) { h ^= ch.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
-  return list[h % list.length];
-}
-
-function createBot(userId: string, b: { name: string; label?: string; description?: string; instructions?: string; avatarShape?: string; avatarColor?: string; mode?: string; isPrimary?: boolean }) {
-  const id = newId('bot');
-  const shape = SHAPES.includes(b.avatarShape as AvatarShape) ? b.avatarShape : hashPick(id, SHAPES.slice(0, 13));
-  const color = COLORS.includes(b.avatarColor as AvatarColor) ? b.avatarColor : hashPick(id, COLORS.filter((c) => c !== 'black'));
-  db.prepare(
-    'INSERT INTO bots(id,user_id,name,label,description,instructions,avatar_shape,avatar_color,mode,is_primary,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-  ).run(id, userId, b.name.trim().slice(0, 60) || 'New Bot', b.label ?? '', b.description ?? '', b.instructions ?? '', shape, color, b.mode === 'teammate' ? 'teammate' : 'personal', b.isPrimary ? 1 : 0, now(), now());
-  hub.emit(userId, { type: 'roster' });
-  return getBot(id)!;
-}
 
 function findOrCreateUser(email: string, name?: string, preferId?: string) {
   const existing = db.prepare('SELECT * FROM users WHERE lower(email)=lower(?)').get(email) as any;
   if (existing) return { id: existing.id as string, isNew: false };
   const id = preferId ?? newId('usr');
   db.prepare('INSERT INTO users(id,email,name,created_at) VALUES (?,?,?,?)').run(id, email, name ?? email.split('@')[0], now());
-  createBot(id, { name: 'Quinn', label: 'Chief of Staff', description: 'Your main point of contact. Checks in proactively and coordinates work with your other Bots.', avatarShape: 'blob', avatarColor: 'black', isPrimary: true });
-  // Tree step 2: the team also gets a search Bot. Every Bot shares the same
-  // tool list, so Scout's job is defined by these instructions: use web_search
-  // for anything current, and always cite the source links.
-  createBot(id, {
-    name: 'Scout',
-    label: 'Search',
-    description: 'Searches the web for current information and hands you a summary with sources.',
-    instructions: '你是团队的搜索机器人。用户问到需要联网查的最新信息、资料、价格、新闻时，用 web_search 工具去查（不要靠记忆猜）；回答要简短，先给结论，再列出标题和来源链接。如果搜索未配置或查不到，就直说查不到，不要编造。',
-    avatarShape: 'sparkle',
-    avatarColor: 'cyan',
-  });
+  // Tree step 5: a new user gets the full 5-bot team (Quinn, Scout, Forge,
+  // Ledger, Brief) from team.ts. Every Bot shares the same tool list, so
+  // each bot's job is defined by its instructions there.
+  ensureTeamBots(id);
   return { id, isNew: true };
 }
 

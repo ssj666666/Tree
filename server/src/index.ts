@@ -17,10 +17,17 @@ import { desSelfTest } from './lib/des.js';
 import { configApi } from './routes-config.js';
 import { startIdleWatcher } from './idle.js';
 import { startMemoryConsolidation } from './agent/memory.js';
+import { db } from './db.js';
+import { ensureTeamBots } from './team.js';
 
 if (!desSelfTest()) throw new Error('DES self-test failed');
 initSubagents();
 initRooms();
+
+// Tree step 5: users created before Forge/Ledger/Brief existed get the
+// missing team bots on boot. ensureTeamBots is idempotent and records a
+// per-user flag, so it never resurrects a bot the user deleted.
+for (const u of db.prepare('SELECT id FROM users').all() as { id: string }[]) ensureTeamBots(u.id);
 
 const app = new Hono();
 app.get('/api/health', (c) => c.json({ ok: true, model: env.deepseekModel }));
