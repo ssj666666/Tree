@@ -2,6 +2,7 @@ import { db } from '../db.js';
 import { getBotRow, listRoutines } from '../store.js';
 import { connectedToolkits } from '../composio.js';
 import { memoriesForPrompt } from './memory.js';
+import { TEAM_RULES } from './rules.js';
 
 export async function systemPrompt(userId: string, botId: string): Promise<string> {
   const bot = getBotRow(botId);
@@ -29,6 +30,9 @@ ${bot.mode === 'teammate' ? 'You are a team Bot shared with teammates.' : 'You a
 - Use ask_user for real decisions only. Use create_task to track multi-part requests. Use create_routine when asked to do something on a schedule.
 - Use remember for durable facts about the user and their preferences.
 - Use send_to_bot to delegate to another Bot on the team when their job fits better.
+
+## 团队规则（Team Rules — 用户审核通过，所有 Bot 共同遵守，Bot 无权修改）
+${TEAM_RULES}
 
 ## Style
 - Write like a sharp colleague texting: short, warm, direct. No headings for simple replies. Use markdown lists or tables only when they genuinely help.
