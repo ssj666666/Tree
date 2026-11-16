@@ -72,7 +72,24 @@ fi
 
 echo "== 4. dependencies + build =="
 npm config set registry https://registry.npmmirror.com
-npm ci --ignore-scripts
+# npm 11.22+ removed --ignore-scripts; probe which script-blocking
+# mechanism this npm understands, and fall back to the env var.
+if npm ci --ignore-scripts --dry-run >/dev/null 2>&1; then
+  export npm_config_ignore_scripts=true
+  npm ci --ignore-scripts
+elif npm ci --allow-scripts=__none__ --dry-run >/dev/null 2>&1; then
+  npm ci --allow-scripts=__none__
+else
+  # Last resort: let install scripts run, but give node-gyp what it needs
+  # (build tools + headers from the domestic mirror).
+  if command -v dnf >/dev/null 2>&1; then
+    dnf install -y python3 make gcc-c++ 2>/dev/null || true
+  elif command -v apt-get >/dev/null 2>&1; then
+    apt-get install -y python3 make g++ 2>/dev/null || true
+  fi
+  npm config set disturl https://npmmirror.com/mirrors/node
+  npm ci
+fi
 npm run build
 
 echo "== 5. systemd service =="
