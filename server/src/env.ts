@@ -43,5 +43,9 @@ export const env = {
   chromiumPath: process.env.TREE_CHROMIUM_PATH ?? '',
   /** Step 3.2 — overall budget for one browse_page call (ms). */
   browseTimeoutMs: Number(process.env.TREE_BROWSE_TIMEOUT_MS ?? 60_000),
+  /** Step 3.4 — virtual screens: base X display number. Quinn = base+0,
+      Scout = base+1, Forge = base+2, Ledger = base+3, Brief = base+4
+      (default base 11, so Quinn :11 … Brief :15). */
+  xvfbBaseDisplay: Number(process.env.TREE_XVFB_BASE_DISPLAY ?? 11),
   dbPath: process.env.DB_PATH ?? new URL('../../data/tree.db', import.meta.url).pathname,
 };

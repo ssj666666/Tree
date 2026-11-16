@@ -161,6 +161,62 @@ if ! PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright npx playw
 fi
 node --input-type=module -e "import('playwright').then(async ({chromium}) => { const b = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] }); await b.close(); console.log('browser ok'); }).catch((e) => { console.error('browser launch failed:', e.message); process.exit(1); })" 2>/dev/null || echo "WARNING: headless Chromium did not launch — browse_page will report an error (check the missing .so in the output above)"
 
+echo "== 4d. Virtual screens (Xvfb, one display per bot) =="
+# Step 3.4 (bot-hq model): each bot gets its own virtual display and its
+# own persistent browser profile. Xvfb provides the displays; the browsers
+# themselves launch on demand per task and close afterwards (one headed
+# Chromium is ~300-400 MB while it runs; an idle Xvfb display is ~20-30 MB),
+# so a 2C4G server can hold all five displays plus one or two browsers.
+# Displays: Quinn :11, Scout :12, Forge :13, Ledger :14, Brief :15.
+# A systemd unit (tree-xvfb) keeps the displays running across reboots.
+# NOTHING here may kill the deploy (set -e): without Xvfb, browse_page
+# falls back to headless mode at runtime and still works.
+# Package names: dnf side is from RHEL/Alibaba Cloud Linux packaging
+# knowledge (xorg-x11-server-Xvfb etc.) — UNVERIFIED on the server until
+# this step runs there; the smoke test below is the real check.
+if command -v dnf >/dev/null 2>&1; then
+  dnf install -y xorg-x11-server-Xvfb xorg-x11-utils xorg-x11-fonts-misc xorg-x11-fonts-Type1 dejavu-sans-fonts liberation-fonts 2>/dev/null || echo "WARNING: some Xvfb packages failed to install — see the smoke test below"
+elif command -v apt-get >/dev/null 2>&1; then
+  apt-get update && apt-get install -y xvfb x11-utils fonts-liberation fonts-dejavu-core 2>/dev/null || echo "WARNING: xvfb install failed — see the smoke test below"
+fi
+# Start script: one Xvfb per bot display, skipped if already up. The
+# script waits, so the systemd unit stays alive while any display runs.
+mkdir -p /root/tree/bin
+cat > /root/tree/bin/xvfb-start.sh <<'EOS'
+#!/bin/bash
+# Tree virtual screens: Quinn :11, Scout :12, Forge :13, Ledger :14, Brief :15.
+for d in 11 12 13 14 15; do
+  if [ -S "/tmp/.X11-unix/X${d}" ]; then
+    echo "display :${d} already running"
+  else
+    Xvfb ":${d}" -screen 0 1280x800x24 -ac >/tmp/xvfb-${d}.log 2>&1 &
+    echo "started Xvfb :${d} (pid $!)"
+  fi
+done
+wait
+EOS
+chmod +x /root/tree/bin/xvfb-start.sh
+cat > /etc/systemd/system/tree-xvfb.service <<EOF
+[Unit]
+Description=Tree virtual screens (Xvfb, one display per bot)
+After=network.target
+[Service]
+Type=simple
+User=root
+ExecStart=/root/tree/bin/xvfb-start.sh
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable tree-xvfb 2>/dev/null || echo "WARNING: could not enable tree-xvfb (displays will not auto-start on reboot)"
+systemctl restart tree-xvfb 2>/dev/null || systemctl start tree-xvfb 2>/dev/null || echo "WARNING: could not start tree-xvfb"
+sleep 2
+for d in 11 12 13 14 15; do
+  if [ -S "/tmp/.X11-unix/X${d}" ]; then echo "display :${d} ok"; else echo "WARNING: display :${d} is not up — browse_page will fall back to headless mode"; fi
+done
+
 echo "== 5. systemd service =="
 NPM_BIN="$(command -v npm)"
 cat > /etc/systemd/system/tree.service <<EOF

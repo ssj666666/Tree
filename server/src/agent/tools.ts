@@ -9,7 +9,7 @@ import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
 import { bochaSearch } from './websearch.js';
 import { fetchPage, readFile, runShell, writeFile } from './localtools.js';
-import { browsePage } from './browsertools.js';
+import { browsePage, takeScreenshot } from './browsertools.js';
 import { setCheckins } from '../proactive.js';
 import { createSubagent, deleteSubagent, listSubagents } from './subagents.js';
 import { createRoom, postToRoom } from './rooms.js';
@@ -259,11 +259,19 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'browse_page',
-    description: 'Open a URL in a real headless browser (Chromium) that runs JavaScript, wait for the page to render, and read its visible text (up to ~8000 characters) plus title and key links. Use this when fetch_page returns little or no text, or for JS-heavy pages (e.g. Zhihu hot list, JS-rendered news). It cannot log in, pass captchas, or read paywalled/member-only content: if the page blocks access, the result says so — tell the user instead of guessing.',
+    description: 'Open a URL in a real browser (Chromium) that runs JavaScript, wait for the page to render, and read its visible text (up to ~8000 characters) plus title and key links. It opens on YOUR OWN virtual screen (Quinn :11, Scout :12, Forge :13, Ledger :14, Brief :15) with your own persistent browser profile (your logins/cookies stay yours, per bot), and saves a screenshot to data/screenshots/<your-name>-latest.png. Use this when fetch_page returns little or no text, or for JS-heavy pages (e.g. Zhihu hot list, JS-rendered news). It cannot log in, pass captchas, or read paywalled/member-only content: if the page blocks access, the result says so — tell the user instead of guessing.',
     parameters: obj({ url: { type: 'string', description: 'The http(s) URL to open in the browser' } }, ['url']),
     activity: 'reading_web',
     label: 'Browsing a page',
-    impl: async (a) => ({ output: await browsePage(String(a.url ?? '')), summary: 'Browsed a page' }),
+    impl: async (a, ctx) => ({ output: await browsePage(String(a.url ?? ''), { id: ctx.botId, name: getBotName(ctx.botId) }), summary: 'Browsed a page' }),
+  },
+  {
+    name: 'take_screenshot',
+    description: 'Take a screenshot of the page you last opened in your own browser (your own virtual screen) and save it to data/screenshots/<your-name>-latest.png. Returns the saved file path. Use when the user asks to see what you are looking at on your screen. If you have not opened any page yet, it says so.',
+    parameters: obj({}),
+    activity: 'reading_web',
+    label: 'Taking a screenshot',
+    impl: async (_a, ctx) => ({ output: await takeScreenshot({ id: ctx.botId, name: getBotName(ctx.botId) }), summary: 'Took a screenshot' }),
   },
   {
     name: 'create_routine',
