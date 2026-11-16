@@ -320,7 +320,7 @@ voiceApi.post('/preview', async (c) => {
   if (!voiceConfigured()) return c.json(notConfigured(), 503);
   const p = await c.req.json<{ botId?: string; voice?: string; speed?: number; language?: string; text?: string }>().catch(() => ({} as any));
   const botRow = p.botId ? getBotRow(p.botId) : null;
-  const text = (p.text ?? '').trim() || '你好，我是 Quinn，有什么可以帮你？';
+  const text = stripMarkdownForSpeech((p.text ?? '').trim()) || '你好，我是 Quinn，有什么可以帮你？';
   try {
     const { bytes } = await synthesizeSpeech(text, {
       voice: resolveVoice(botRow, p.voice),

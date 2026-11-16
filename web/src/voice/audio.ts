@@ -205,3 +205,30 @@ export function base64ToPcm(b64: string): Int16Array {
   for (let i = 0; i < n; i++) bytes[i] = bin.charCodeAt(i);
   return new Int16Array(bytes.buffer);
 }
+
+/**
+ * Play base64-encoded mp3 (the reply audio from POST /api/voice/talk) through a
+ * plain <audio> element — no worklet needed for whole-file playback.
+ * `started` rejects when the browser blocks autoplay (e.g. no user gesture);
+ * `done` resolves when playback ends, errors, or stop() is called.
+ */
+export function playMp3Base64(b64: string, mime = 'audio/mpeg'): {
+  audio: HTMLAudioElement; started: Promise<void>; done: Promise<void>; stop: () => void;
+} {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  const audio = new Audio(url);
+  let stopFn: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    const settle = () => { URL.revokeObjectURL(url); resolve(); };
+    stopFn = () => { audio.pause(); settle(); };
+    audio.addEventListener('ended', settle, { once: true });
+    audio.addEventListener('error', settle, { once: true });
+  });
+  const started = audio.play();
+  // Callers that only await `done` must not trip an unhandled rejection.
+  started.catch(() => {});
+  return { audio, started, done, stop: stopFn };
+}

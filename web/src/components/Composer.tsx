@@ -6,6 +6,7 @@ import { Icon } from './Icon';
 import { Menu } from './Menu';
 import { endCall, isCallActive, useVoice } from '../voice/call';
 import { useDictation } from '../voice/dictation';
+import { useTalkControls } from '../voice/talk';
 
 const MAX_H = 200;
 const drafts = new Map<string, string>();
@@ -72,6 +73,8 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
     });
   };
   const dictation = useDictation(insertText, setError, bot.voiceLanguage);
+  // Push-to-talk (step 4.1): hold the waveform button to speak, Quinn answers by voice.
+  const talk = useTalkControls(bot, setError);
   const inCall = useVoice((s) => isCallActive(s) && s.botId === bot.id);
 
   const hasText = text.trim().length > 0;
@@ -116,8 +119,7 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
             className={`composer__btn${dictation.state === 'recording' ? ' is-recording' : dictation.state === 'transcribing' ? ' is-transcribing' : ''}`}
             aria-label="Dictate"
             aria-pressed={dictation.state === 'recording'}
-            title="Dictation is not available yet — voice is disabled in Tree step 1"
-            disabled
+            title="Hold to dictate — release to insert the text"
             onPointerDown={dictation.onPointerDown}
             onPointerUp={dictation.onPointerUp}
             onKeyDown={dictation.onKeyDown}
@@ -125,7 +127,26 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
           >
             <Icon name="mic" opacity={0.56} />
           </button>
-          {inCall && !hasText ? (
+          {talk.status !== 'idle' ? (
+            <button
+              type="button"
+              className={`composer__cta is-${talk.status}`}
+              aria-label={talk.status === 'recording' ? 'Stop recording' : talk.status === 'playing' ? 'Stop playback' : 'Waiting for reply'}
+              title={
+                talk.status === 'recording'
+                  ? 'Recording… release to send, tap to keep recording'
+                  : talk.status === 'waiting'
+                    ? 'Thinking…'
+                    : 'Speaking… tap to stop'
+              }
+              onPointerDown={talk.onPointerDown}
+              onPointerUp={talk.onPointerUp}
+              onKeyDown={talk.onKeyDown}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <Icon name="voice_a" size={16} />
+            </button>
+          ) : inCall && !hasText ? (
             <button type="button" className="composer__cta is-in-call" onClick={endCall} aria-label="End voice call" title="End voice call">
               <Icon name="voice_a" size={16} />
             </button>
@@ -136,11 +157,15 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
           ) : (
             <button
               type="button"
-              className="composer__cta"
+              className={hasText ? 'composer__cta' : 'composer__cta composer__cta--talk'}
               onClick={hasText ? send : undefined}
-              disabled={!hasText || sending}
-              aria-label={hasText ? 'Send' : 'Voice chat is not available yet'}
-              title={hasText ? 'Send (Enter)' : 'Voice chat is not available yet — text-only in step 1'}
+              onPointerDown={hasText ? undefined : talk.onPointerDown}
+              onPointerUp={hasText ? undefined : talk.onPointerUp}
+              onKeyDown={hasText ? undefined : talk.onKeyDown}
+              onContextMenu={hasText ? undefined : (e) => e.preventDefault()}
+              disabled={hasText && sending}
+              aria-label={hasText ? 'Send' : 'Voice chat: hold to talk'}
+              title={hasText ? 'Send (Enter)' : 'Hold to talk — release to send, Quinn answers by voice'}
             >
               <Icon name={hasText ? 'arrow_up' : 'voice_a'} size={16} />
             </button>

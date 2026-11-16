@@ -48,6 +48,17 @@
 .bubble-wrap.is-right .bubble__time { transform: translateX(4px); }
 .bubble-wrap:hover .bubble__time { opacity: 1; transform: none; }
 
+/* Per-message read-aloud (step 4.1): speaker button next to assistant bubbles. */
+.bubble__speak {
+  flex-shrink: 0; width: 22px; height: 22px; margin-bottom: 4px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--color-text-tertiary); opacity: 0.45; transition: opacity 160ms, background 120ms, color 120ms;
+}
+.bubble-wrap:hover .bubble__speak, .bubble__speak:focus-visible { opacity: 1; }
+.bubble__speak:hover { background: var(--color-bg-elevated); color: var(--color-text-primary); }
+.bubble__speak.is-playing { opacity: 1; color: var(--color-danger); animation: breathe 1.2s ease-in-out infinite; }
+.bubble__speak.is-error { opacity: 1; color: var(--color-danger); }
+
 .bubble {
   max-width: 560px; min-width: 0; padding: 7px 12px; border-radius: var(--radius-bubble);
   font-size: var(--text-message); line-height: 22px; letter-spacing: 0.15px;

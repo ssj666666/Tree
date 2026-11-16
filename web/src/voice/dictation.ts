@@ -9,7 +9,8 @@ export type DictationState = 'idle' | 'recording' | 'transcribing';
 const HOLD_MS = 350;
 const MAX_MS = 120_000;
 
-function pickMime(): string | undefined {
+/** First MediaRecorder mime this browser supports, or undefined (use the browser default). */
+export function pickMime(): string | undefined {
   if (typeof MediaRecorder === 'undefined') return undefined;
   for (const m of ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4']) if (MediaRecorder.isTypeSupported?.(m)) return m;
   return undefined;

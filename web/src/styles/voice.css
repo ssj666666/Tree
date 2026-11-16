@@ -71,6 +71,12 @@
 .composer__btn.is-transcribing { animation: breathe 0.9s ease-in-out infinite; }
 .composer__cta.is-in-call { background: var(--color-danger); }
 .composer__cta.is-in-call:hover:not(:disabled) { background: #C82532; }
+/* Push-to-talk (step 4.1): red = recording / speaking, tap to stop; breathe = waiting. */
+.composer__cta.is-recording { background: var(--color-danger); animation: breathe 1.2s ease-in-out infinite; }
+.composer__cta.is-recording:hover:not(:disabled) { background: #C82532; }
+.composer__cta.is-waiting { animation: breathe 1s ease-in-out infinite; }
+.composer__cta.is-playing { background: var(--color-danger); }
+.composer__cta.is-playing:hover:not(:disabled) { background: #C82532; }
 
 /* ---------- details panel: voice settings ---------- */
 .mini-select--native { position: relative; cursor: pointer; }
@@ -84,6 +90,7 @@
 }
 .voice-preview:hover:not(:disabled) { background: var(--color-bg-hover); }
 .voice-preview:disabled { opacity: 0.6; }
+.voice-preview.is-playing { color: var(--color-danger); }
 .panel-row--call { gap: 8px; color: var(--color-ink); font-size: 13px; }
 .panel-row--call.is-active { color: var(--color-danger); }
 .voice-error { padding: 4px 12px 8px; font-size: 12px; color: var(--color-danger); }

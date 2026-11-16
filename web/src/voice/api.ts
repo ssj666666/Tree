@@ -15,7 +15,33 @@ export interface VoiceSession {
   session: Record<string, unknown>;
 }
 
-export interface VoiceOptions { voices: VoiceOption[]; languages: { code: string; name: string }[]; speeds: number[] }
+export interface VoiceOptions {
+  voices: VoiceOption[];
+  languages: { code: string; name: string }[];
+  speeds: number[];
+  /** False when no DASHSCOPE_API_KEY is set on the server (voice calls answer 503). */
+  configured?: boolean;
+  model?: string;
+  /** Server default voice id (used when a bot's stored voice is not a CosyVoice voice). */
+  voice?: string;
+}
+
+export interface TalkResult {
+  transcript: string;
+  reply: string;
+  replySeq: number | null;
+  audioMime: string;
+  audioBase64: string;
+  pendingApproval: boolean;
+}
+
+/** Server voice errors carry a Chinese `message` plus a short `error` code — show the message. */
+async function readVoiceError(res: Response, fallback: string): Promise<string> {
+  try {
+    const j = (await res.json()) as { error?: string; message?: string };
+    return j.message ?? j.error ?? fallback;
+  } catch { return fallback; }
+}
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`/api/voice${path}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -41,9 +67,9 @@ export const voiceApi = {
   endBeacon: (botId: string, callId: string, transcript: { role: 'user' | 'assistant'; text: string }[]) => {
     try { navigator.sendBeacon('/api/voice/end', new Blob([JSON.stringify({ botId, callId, transcript })], { type: 'application/json' })); } catch { /* ignore */ }
   },
-  async preview(p: { botId: string; voice?: string; speed?: number; language?: string; text?: string }): Promise<Int16Array> {
+  async preview(p: { botId?: string; voice?: string; speed?: number; language?: string; text?: string }): Promise<Int16Array> {
     const res = await fetch('/api/voice/preview', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...p, codec: 'pcm' }) });
-    if (!res.ok) throw new Error('Preview unavailable');
+    if (!res.ok) throw new Error(await readVoiceError(res, '语音试听不可用'));
     const buf = await res.arrayBuffer();
     return new Int16Array(buf, 0, buf.byteLength >> 1);
   },
@@ -53,11 +79,18 @@ export const voiceApi = {
     const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
     fd.append('file', blob, `dictation.${ext}`);
     const res = await fetch('/api/voice/stt', { method: 'POST', credentials: 'include', body: fd });
-    if (!res.ok) {
-      let msg = 'Transcription failed';
-      try { msg = ((await res.json()) as { error?: string }).error ?? msg; } catch { /* not json */ }
-      throw new Error(msg);
-    }
+    if (!res.ok) throw new Error(await readVoiceError(res, '语音识别失败'));
     return ((await res.json()) as { text: string }).text;
+  },
+  /** Push-to-talk: send recorded audio, get the transcript + spoken mp3 reply back. */
+  async talk(blob: Blob, botId: string, language?: string): Promise<TalkResult> {
+    const fd = new FormData();
+    fd.append('botId', botId);
+    if (language) fd.append('language', language);
+    const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
+    fd.append('file', blob, `talk.${ext}`);
+    const res = await fetch('/api/voice/talk', { method: 'POST', credentials: 'include', body: fd });
+    if (!res.ok) throw new Error(await readVoiceError(res, '语音对话失败'));
+    return res.json() as Promise<TalkResult>;
   },
 };

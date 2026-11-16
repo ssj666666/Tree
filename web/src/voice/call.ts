@@ -439,16 +439,31 @@ function landedNote(request: string, replies: Row[], after: Row[]): string {
   return `The work you handed off just finished. Request: "${clip(request, 200)}". ${text ? `Your text agent replied:\n"""\n${clip(text, 1800)}\n"""` : 'It finished without a written reply.'}${waiting.length ? `\nStill waiting on the user in the chat: ${waiting.join('; ')}.` : ''}`;
 }
 
+let currentPreview: { ctx: AudioContext; player: PcmPlayer } | null = null;
+
+/** Stop a preview (or per-message read-aloud) that is currently playing. */
+export function stopPreview() {
+  const p = currentPreview;
+  currentPreview = null;
+  if (!p) return;
+  p.player.dispose();
+  void p.ctx.close().catch(() => {});
+}
+
 /** Play a short TTS sample through the same PCM path the call uses. */
-export async function previewVoice(p: { botId: string; voice?: string; speed?: number; language?: string }): Promise<void> {
+export async function previewVoice(p: { botId: string; voice?: string; speed?: number; language?: string; text?: string }): Promise<void> {
+  stopPreview();
   const ctx = createAudioContext();
   const player = new PcmPlayer(ctx);
+  currentPreview = { ctx, player };
   try {
     const pcm = await voiceApi.preview(p);
+    if (currentPreview?.player !== player) return; // superseded by a newer preview
     // Feed it in 100 ms chunks, like realtime deltas.
     for (let i = 0; i < pcm.length; i += 2400) player.push(pcm.subarray(i, i + 2400));
     await player.whenIdle(30000);
   } finally {
+    if (currentPreview?.player === player) currentPreview = null;
     player.dispose();
     void ctx.close().catch(() => {});
   }

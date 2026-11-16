@@ -3,6 +3,7 @@ import type { Bot, LiveState, MessageBody, Row, ToolCallBody } from '@shared/typ
 import { BotAvatar, BotAvatarFor } from '../avatar/BotAvatar';
 import { clock, dividerLabel } from '../lib/time';
 import { useStore } from '../store';
+import { previewVoice, stopPreview } from '../voice/call';
 import { ActivityLine } from './ActivityLine';
 import { CardRow } from './cards/Cards';
 import { Icon } from './Icon';
@@ -54,8 +55,24 @@ function cornerClass(i: number, n: number) {
   return ' is-mid';
 }
 
-const Bubble = memo(function Bubble({ row, side, pos }: { row: Row; side: 'left' | 'right'; pos: string }) {
+const Bubble = memo(function Bubble({ row, side, pos, bot }: { row: Row; side: 'left' | 'right'; pos: string; bot: Bot }) {
   const b = row.body as MessageBody;
+  const [speaking, setSpeaking] = useState(false);
+  const [speakError, setSpeakError] = useState<string | null>(null);
+  // Speaker button on assistant messages: read this reply aloud (step 4.1).
+  const speak = async () => {
+    if (speaking) { stopPreview(); return; }
+    if (!b.text?.trim() || b.streaming) return;
+    setSpeaking(true);
+    setSpeakError(null);
+    try {
+      await previewVoice({ botId: bot.id, voice: bot.voice, speed: bot.voiceSpeed, language: bot.voiceLanguage, text: b.text });
+    } catch (e) {
+      setSpeakError((e as Error).message || '朗读失败');
+    } finally {
+      setSpeaking(false);
+    }
+  };
   return (
     <div className={`bubble-wrap is-${side}`}>
       <div className={`bubble is-${side === 'right' ? 'user' : 'agent'}${pos}${b.streaming ? ' is-streaming' : ''}`}>
@@ -70,6 +87,17 @@ const Bubble = memo(function Bubble({ row, side, pos }: { row: Row; side: 'left'
           </div>
         )}
       </div>
+      {side === 'left' && b.text?.trim() && !b.streaming && (
+        <button
+          type="button"
+          className={`bubble__speak${speaking ? ' is-playing' : ''}${speakError ? ' is-error' : ''}`}
+          onClick={speak}
+          aria-label={speaking ? 'Stop speaking' : 'Read this message aloud'}
+          title={speakError ?? (speaking ? 'Stop speaking' : 'Read aloud')}
+        >
+          <Icon name="voice_b" size={12} />
+        </button>
+      )}
       <span className="bubble__time">{clock(row.createdAt)}</span>
     </div>
   );
@@ -179,7 +207,7 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
                 <div key={it.key} className={`group is-${it.side}`}>
                   {it.from && <SenderLabel from={it.from} />}
                   {it.rows.map((r, i) => (
-                    <Fragment key={r.seq}><Bubble row={r} side={it.side} pos={cornerClass(i, it.rows.length)} /></Fragment>
+                    <Fragment key={r.seq}><Bubble row={r} side={it.side} pos={cornerClass(i, it.rows.length)} bot={bot} /></Fragment>
                   ))}
                 </div>
               );
