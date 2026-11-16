@@ -52,8 +52,32 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 echo "== 3. code =="
+sync_from_tarball() {
+  # Fresh copy from a source tarball (used only when git cannot reach any
+  # remote). Preserves /root/tree/.env if it already exists.
+  [ -f /root/tree/.env ] && cp /root/tree/.env /tmp/tree-env-backup
+  curl -fsSL --max-time 60 https://ghproxy.net/https://codeload.github.com/ssj666666/Tree/tar.gz/refs/heads/main -o /tmp/tree.tar.gz
+  rm -rf /root/tree
+  mkdir -p /root/tree
+  tar -xzf /tmp/tree.tar.gz -C /root/tree --strip-components=1
+  [ -f /tmp/tree-env-backup ] && cp /tmp/tree-env-backup /root/tree/.env
+  cd /root/tree
+  echo "note: installed from tarball, no .git — future updates need a fresh download"
+}
 if [ -d /root/tree/.git ]; then
-  cd /root/tree && git pull --ff-only
+  cd /root/tree
+  # github.com is often unreachable from mainland servers, so a failed
+  # pull must NOT kill the script (set -e): try proxies, then tarball.
+  if ! git pull --ff-only 2>/dev/null; then
+    echo "github pull failed, trying ghproxy..."
+    if ! git pull --ff-only https://ghproxy.net/https://github.com/ssj666666/Tree.git main 2>/dev/null; then
+      echo "ghproxy pull failed, trying gh-proxy..."
+      if ! git pull --ff-only https://gh-proxy.com/https://github.com/ssj666666/Tree.git main 2>/dev/null; then
+        echo "pull failed everywhere, re-syncing from tarball..."
+        sync_from_tarball
+      fi
+    fi
+  fi
 else
   CLONED=0
   for url in https://github.com/ssj666666/Tree.git https://ghproxy.net/https://github.com/ssj666666/Tree.git https://gh-proxy.com/https://github.com/ssj666666/Tree.git; do
@@ -62,10 +86,7 @@ else
   done
   if [ "$CLONED" = "0" ]; then
     echo "git clone failed everywhere, trying source tarball via ghproxy..."
-    curl -fsSL --max-time 60 https://ghproxy.net/https://codeload.github.com/ssj666666/Tree/tar.gz/refs/heads/main -o /tmp/tree.tar.gz
-    mkdir -p /root/tree
-    tar -xzf /tmp/tree.tar.gz -C /root/tree --strip-components=1
-    echo "note: installed from tarball, no .git — future updates need a fresh download"
+    sync_from_tarball
   fi
   cd /root/tree
 fi
