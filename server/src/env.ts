@@ -36,5 +36,7 @@ export const env = {
   adminPasswordHash: process.env.TREE_ADMIN_PASSWORD_HASH ?? '',
   /** Optional: Bocha web-search API key. Empty = web_search tells the bot search is not configured. */
   bochaKey: opt('BOCHA_API_KEY'),
+  /** Step 3.1 — "local hands": the workspace the bots may act on. */
+  workspace: process.env.TREE_WORKSPACE ?? '/root/tree',
   dbPath: process.env.DB_PATH ?? new URL('../../data/tree.db', import.meta.url).pathname,
 };

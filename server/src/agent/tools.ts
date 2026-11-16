@@ -8,6 +8,7 @@ import { executeComposio, innerToolSlugs, isReadOnlySlug, toolkitInfo } from '..
 import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
 import { bochaSearch } from './websearch.js';
+import { fetchPage, readFile, runShell, writeFile } from './localtools.js';
 import { setCheckins } from '../proactive.js';
 import { createSubagent, deleteSubagent, listSubagents } from './subagents.js';
 import { createRoom, postToRoom } from './rooms.js';
@@ -218,6 +219,42 @@ export const TOOLS: ToolDef[] = [
     activity: 'searching_web',
     label: 'Searching the web',
     impl: async (a) => ({ output: await bochaSearch(String(a.query ?? ''), Number(a.count ?? 5)), summary: 'Searched the web' }),
+  },
+  // Step 3.1 — local hands: act directly on this server (no cloud computer).
+  {
+    name: 'run_shell',
+    description: 'Run one bash command on this Linux server (as root) and get its output. Working directory is the workspace (or /tmp). Use for commands, git (add/commit — pushing stays with the operator), and quick data work. Commands touching .env or API keys, dumping the whole environment, or destructive commands (rm -rf /, mkfs, dd, reboot) are refused. Output is capped at ~6000 characters.',
+    parameters: obj({ command: { type: 'string', description: 'The shell command to run, e.g. "ls -la" or "git -C /root/tree status"' }, cwd: { type: 'string', description: 'Working directory, inside the workspace or /tmp (default: workspace root)' } }, ['command']),
+    activity: 'running_commands',
+    label: 'Running commands',
+    impl: async (a) => {
+      const r = await runShell(String(a.command ?? ''), a.cwd ? String(a.cwd) : undefined);
+      return { output: JSON.stringify(r), summary: r.exit_code === null ? 'Refused / failed' : `exit ${r.exit_code}` };
+    },
+  },
+  {
+    name: 'read_file',
+    description: 'Read a text file inside the workspace directory. Returns the file contents (capped at ~20000 characters). Credential files (.env, *.key, *.pem, *password*) cannot be read.',
+    parameters: obj({ path: { type: 'string', description: 'Path inside the workspace, e.g. "notes.md" or "server/src/agent/tools.ts"' } }, ['path']),
+    activity: 'drafting_file',
+    label: 'Reading a file',
+    impl: async (a) => ({ output: readFile(String(a.path ?? '')), summary: 'Read a file' }),
+  },
+  {
+    name: 'write_file',
+    description: 'Write a text file inside the workspace directory (parent folders are created). Use for notes, reports, code, and anything you produce. Credential files (.env, *.key, *.pem, *password*) cannot be written.',
+    parameters: obj({ path: { type: 'string', description: 'Path inside the workspace, e.g. "notes.md"' }, content: { type: 'string', description: 'The full file contents' } }, ['path', 'content']),
+    activity: 'drafting_file',
+    label: 'Writing a file',
+    impl: async (a) => ({ output: writeFile(String(a.path ?? ''), String(a.content ?? '')), summary: 'Wrote a file' }),
+  },
+  {
+    name: 'fetch_page',
+    description: 'Open a URL and read it as plain text (up to ~8000 characters). Use for a link web_search found. This reads the static page only — no JavaScript runs, so JS-heavy pages (e.g. Douyin) return little or no text; say so instead of guessing.',
+    parameters: obj({ url: { type: 'string', description: 'The http(s) URL to open' } }, ['url']),
+    activity: 'reading_web',
+    label: 'Opening a page',
+    impl: async (a) => ({ output: await fetchPage(String(a.url ?? '')), summary: 'Opened a page' }),
   },
   {
     name: 'create_routine',
