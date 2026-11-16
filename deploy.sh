@@ -93,12 +93,46 @@ fi
 
 echo "== 4. dependencies + build =="
 npm config set registry https://registry.npmmirror.com
-# npm 12 removed the --ignore-scripts flag and the disturl config, but the
-# ignore-scripts setting in .npmrc still works (verified against npm 12.2.2):
-# it stops packages running install scripts (better-sqlite3 ships a
-# linux-x64 prebuild in the package, so no compilation is needed).
+# The ignore-scripts setting in .npmrc works on npm 11/12 (verified against
+# npm 12.2.2): it stops packages running install scripts during npm ci
+# (better-sqlite3 ships a linux-x64 prebuild, handled in step 4b).
 printf 'ignore-scripts=true\n' > .npmrc
 npm ci
+
+echo "== 4b. better-sqlite3 on old glibc =="
+# better-sqlite3 13.0.3 ships a prebuilt binary that needs glibc 2.33, but
+# Alibaba Cloud Linux 3 only has glibc 2.32, so the service crash-loops on
+# start (seen 2026-11-16: "GLIBC_2.33 not found", restart counter 14).
+# On such systems rebuild it from source and hide the prebuild, because
+# v13.0.3 prefers the prebuild over a fresh build. A plain
+# "node-gyp rebuild" is a no-op while the prebuild exists, so
+# --force_build=1 is required; and require() alone does not prove the
+# native module loads — only constructing a real Database does.
+GLIBC_VER="$(ldd --version 2>/dev/null | head -1 | grep -o '[0-9][0-9]*\.[0-9][0-9]*' | head -1)"
+GLIBC_OK=0
+if [ -n "$GLIBC_VER" ]; then
+  GLIBC_MAJOR="${GLIBC_VER%%.*}"; GLIBC_MINOR="${GLIBC_VER##*.}"
+  if [ "$GLIBC_MAJOR" -gt 2 ] || { [ "$GLIBC_MAJOR" -eq 2 ] && [ "$GLIBC_MINOR" -ge 33 ]; }; then GLIBC_OK=1; fi
+fi
+if [ "$GLIBC_OK" = "1" ]; then
+  echo "glibc $GLIBC_VER >= 2.33, prebuilt better-sqlite3 works as-is"
+else
+  echo "glibc ${GLIBC_VER:-unknown} < 2.33, rebuilding better-sqlite3 from source..."
+  if command -v dnf >/dev/null 2>&1; then
+    dnf install -y python3.11 gcc-c++ make || dnf install -y python3 gcc-c++ make
+  elif command -v apt-get >/dev/null 2>&1; then
+    apt-get update && apt-get install -y python3 gcc g++ make
+  fi
+  PYBIN="$(command -v python3.11 || command -v python3)"
+  cd node_modules/better-sqlite3
+  NODEJS_ORG_MIRROR=https://npmmirror.com/mirrors/node npx --yes node-gyp rebuild --python="$PYBIN" --force_build=1
+  if [ -f build/Release/better_sqlite3.node ] && [ -f prebuilds/linux-x64.node ]; then
+    mv prebuilds/linux-x64.node prebuilds/linux-x64.node.bak
+  fi
+  cd /root/tree
+  node -e "new (require('/root/tree/node_modules/better-sqlite3'))(':memory:'); console.log('sqlite ok')"
+fi
+
 npm run build
 
 echo "== 5. systemd service =="
