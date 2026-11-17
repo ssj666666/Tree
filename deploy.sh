@@ -59,10 +59,35 @@ sync_from_tarball() {
   # and screenshots — wiping it would log every bot out and erase memory.
   # The tarball only contains git-tracked files and data/ is gitignored,
   # so the restore can never clash with extracted files.
+  # 2026-11-17: ghproxy.net started returning 403 for the codeload
+  # tarball, so try several proxies in turn and VERIFY the download is a
+  # real gzip before touching /root/tree — a bad download must never wipe
+  # the working install. The two proxies that answered 200 from the dev
+  # VM are tried first; the server's network may favour different ones.
   rm -rf /tmp/tree-env-backup /tmp/tree-data-backup
   [ -f /root/tree/.env ] && cp /root/tree/.env /tmp/tree-env-backup
   [ -d /root/tree/data ] && cp -a /root/tree/data /tmp/tree-data-backup
-  curl -fsSL --max-time 60 https://ghproxy.net/https://codeload.github.com/ssj666666/Tree/tar.gz/refs/heads/main -o /tmp/tree.tar.gz
+  GOT_TARBALL=0
+  for turl in \
+    "https://gh-proxy.com/https://codeload.github.com/ssj666666/Tree/tar.gz/refs/heads/main" \
+    "https://gh-proxy.org/https://codeload.github.com/ssj666666/Tree/tar.gz/refs/heads/main" \
+    "https://ghproxy.net/https://codeload.github.com/ssj666666/Tree/tar.gz/refs/heads/main" \
+    "https://mirror.ghproxy.com/https://codeload.github.com/ssj666666/Tree/tar.gz/refs/heads/main" \
+    "https://ghfast.top/https://codeload.github.com/ssj666666/Tree/tar.gz/refs/heads/main" \
+    "https://ghps.cc/https://codeload.github.com/ssj666666/Tree/tar.gz/refs/heads/main" ; do
+    echo "trying tarball: $turl"
+    if curl -fsSL --max-time 60 "$turl" -o /tmp/tree.tar.gz && tar -tzf /tmp/tree.tar.gz >/dev/null 2>&1; then
+      echo "tarball ok from $turl"
+      GOT_TARBALL=1
+      break
+    fi
+    echo "tarball failed from $turl"
+  done
+  if [ "$GOT_TARBALL" = "0" ]; then
+    echo "ERROR: all tarball mirrors failed — /root/tree left untouched, Tree keeps running the old version" >&2
+    rm -rf /tmp/tree-env-backup /tmp/tree-data-backup
+    exit 1
+  fi
   rm -rf /root/tree
   mkdir -p /root/tree
   tar -xzf /tmp/tree.tar.gz -C /root/tree --strip-components=1
@@ -81,14 +106,17 @@ if [ -d /root/tree/.git ]; then
     if ! git pull --ff-only https://ghproxy.net/https://github.com/ssj666666/Tree.git main 2>/dev/null; then
       echo "ghproxy pull failed, trying gh-proxy..."
       if ! git pull --ff-only https://gh-proxy.com/https://github.com/ssj666666/Tree.git main 2>/dev/null; then
-        echo "pull failed everywhere, re-syncing from tarball..."
-        sync_from_tarball
+        echo "gh-proxy pull failed, trying gitclone..."
+        if ! git pull --ff-only https://gitclone.com/github.com/ssj666666/Tree.git main 2>/dev/null; then
+          echo "pull failed everywhere, re-syncing from tarball..."
+          sync_from_tarball
+        fi
       fi
     fi
   fi
 else
   CLONED=0
-  for url in https://github.com/ssj666666/Tree.git https://ghproxy.net/https://github.com/ssj666666/Tree.git https://gh-proxy.com/https://github.com/ssj666666/Tree.git; do
+  for url in https://github.com/ssj666666/Tree.git https://ghproxy.net/https://github.com/ssj666666/Tree.git https://gh-proxy.com/https://github.com/ssj666666/Tree.git https://gitclone.com/github.com/ssj666666/Tree.git; do
     echo "trying clone: $url"
     if git clone "$url" /root/tree 2>/dev/null; then CLONED=1; break; fi
   done
