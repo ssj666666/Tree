@@ -64,6 +64,12 @@ sync_from_tarball() {
   # real gzip before touching /root/tree — a bad download must never wipe
   # the working install. The two proxies that answered 200 from the dev
   # VM are tried first; the server's network may favour different ones.
+  # 2026-11-17 (2nd fix): cd out of /root/tree FIRST. The git-pull branch
+  # calls this function while sitting inside /root/tree, so rm -rf deleted
+  # the shell's own working directory and tar then died with
+  # "Cannot getcwd: No such file or directory" — leaving /root/tree empty
+  # (the .env/data backups in /tmp survived, but nothing was restored).
+  cd /tmp
   rm -rf /tmp/tree-env-backup /tmp/tree-data-backup
   [ -f /root/tree/.env ] && cp /root/tree/.env /tmp/tree-env-backup
   [ -d /root/tree/data ] && cp -a /root/tree/data /tmp/tree-data-backup
@@ -90,7 +96,12 @@ sync_from_tarball() {
   fi
   rm -rf /root/tree
   mkdir -p /root/tree
-  tar -xzf /tmp/tree.tar.gz -C /root/tree --strip-components=1
+  if ! tar -xzf /tmp/tree.tar.gz -C /root/tree --strip-components=1; then
+    echo "ERROR: tar extraction failed — restoring .env and data, /root/tree has no code yet" >&2
+    [ -f /tmp/tree-env-backup ] && cp /tmp/tree-env-backup /root/tree/.env
+    if [ -d /tmp/tree-data-backup ]; then mkdir -p /root/tree/data && cp -a /tmp/tree-data-backup/. /root/tree/data/; fi
+    exit 1
+  fi
   [ -f /tmp/tree-env-backup ] && cp /tmp/tree-env-backup /root/tree/.env
   if [ -d /tmp/tree-data-backup ]; then mkdir -p /root/tree/data && cp -a /tmp/tree-data-backup/. /root/tree/data/; fi
   rm -rf /tmp/tree-env-backup /tmp/tree-data-backup
