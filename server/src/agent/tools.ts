@@ -11,6 +11,7 @@ import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes
 import { bochaSearch } from './websearch.js';
 import { fetchPage, readFile, runShell, writeFile } from './localtools.js';
 import { browsePage, takeScreenshot } from './browsertools.js';
+import { desktopClick, desktopClickText, desktopClose, desktopKey, desktopOpen, desktopScreenshot, desktopType } from './desktoptools.js';
 import { draftEmail, readEmail, readInbox, sendEmail } from './emailtools.js';
 import { setCheckins } from '../proactive.js';
 import { createSubagent, deleteSubagent, listSubagents } from './subagents.js';
@@ -173,6 +174,64 @@ export const TOOLS: ToolDef[] = [
     activity: 'reading_web',
     label: 'Taking a screenshot',
     impl: async (_a, ctx) => ({ output: await takeScreenshot({ id: ctx.botId, name: getBotName(ctx.botId) }), summary: 'Took a screenshot' }),
+  },
+  // Step 7 — mouse/keyboard on the bot's own virtual desktop (Computer Use).
+  // desktop_open keeps a browser open on the bot's screen; the rest drive it.
+  {
+    name: 'desktop_open',
+    description: 'Open a URL in a persistent browser kept open on YOUR OWN virtual screen (Quinn :11, Scout :12, Forge :13, Ledger :14, Brief :15), 1280x800, with your own persistent browser profile. The browser stays open so you can click/type on it afterwards with desktop_click, desktop_click_text, desktop_type or desktop_key. Returns the page title and a text snippet plus a screenshot path. Use desktop_close when done (it frees ~300-400 MB).',
+    parameters: obj({ url: { type: 'string', description: 'The http(s) URL to open on your desktop' } }, ['url']),
+    activity: 'reading_web',
+    label: 'Opening a desktop browser',
+    impl: async (a, ctx) => ({ output: await desktopOpen({ id: ctx.botId, name: getBotName(ctx.botId) }, String(a.url ?? '')), summary: 'Opened desktop browser' }),
+  },
+  {
+    name: 'desktop_click',
+    description: 'Move the mouse and left-click at coordinates (x, y) on YOUR OWN virtual screen (1280x800). This is the raw mouse — use it for canvas, maps, or a spot the user points at by coordinates. For buttons/links whose text you already read, prefer desktop_click_text (no guessing coordinates). Coordinates outside 0-1279 / 0-799 are refused. Confirm what the click did with desktop_screenshot.',
+    parameters: obj({ x: { type: 'integer', description: 'Horizontal position, 0-1279' }, y: { type: 'integer', description: 'Vertical position, 0-799' } }, ['x', 'y']),
+    activity: 'working',
+    label: 'Clicking on the screen',
+    impl: async (a, ctx) => ({ output: await desktopClick({ id: ctx.botId, name: getBotName(ctx.botId) }, Number(a.x), Number(a.y)), summary: 'Clicked on screen' }),
+  },
+  {
+    name: 'desktop_click_text',
+    description: 'Click the element whose visible text matches, in your persistent desktop browser (open one first with desktop_open). This is the reliable way to click a button or link: you read the page as text, then click by that text — no coordinates, no guessing. Returns the page title and URL after the click.',
+    parameters: obj({ text: { type: 'string', description: 'Visible text of the button/link to click, e.g. "登录" or "下一页"' } }, ['text']),
+    activity: 'working',
+    label: 'Clicking by text',
+    impl: async (a, ctx) => ({ output: await desktopClickText({ id: ctx.botId, name: getBotName(ctx.botId) }, String(a.text ?? '')), summary: 'Clicked by text' }),
+  },
+  {
+    name: 'desktop_type',
+    description: 'Type text on YOUR OWN virtual screen, into whatever has keyboard focus (e.g. a search box you just clicked). Single call limit 2000 characters. Never type a password or secret unless the user explicitly asked you to.',
+    parameters: obj({ text: { type: 'string', description: 'Text to type' } }, ['text']),
+    activity: 'working',
+    label: 'Typing on the screen',
+    impl: async (a, ctx) => ({ output: await desktopType({ id: ctx.botId, name: getBotName(ctx.botId) }, String(a.text ?? '')), summary: 'Typed on screen' }),
+  },
+  {
+    name: 'desktop_key',
+    description: 'Press a key on YOUR OWN virtual screen. Supported: Return, Tab, Escape, arrow keys, Home/End, Page_Up/Page_Down, F1-F12, and ctrl/alt/shift + a letter or digit (e.g. ctrl+l to focus the address bar, ctrl+c to copy).',
+    parameters: obj({ key: { type: 'string', description: 'Key to press, e.g. "Return", "Tab", "ctrl+l"' } }, ['key']),
+    activity: 'working',
+    label: 'Pressing a key',
+    impl: async (a, ctx) => ({ output: await desktopKey({ id: ctx.botId, name: getBotName(ctx.botId) }, String(a.key ?? '')), summary: 'Pressed a key' }),
+  },
+  {
+    name: 'desktop_screenshot',
+    description: 'Capture your WHOLE virtual desktop (1280x800, mouse cursor and all windows included) and save it to data/screenshots/<your-name>-desktop.png. Use it to see what your mouse just clicked or what is on your screen right now. (take_screenshot only captures the browser page; this one captures the entire desktop.)',
+    parameters: obj({}),
+    activity: 'reading_web',
+    label: 'Capturing the desktop',
+    impl: async (_a, ctx) => ({ output: await desktopScreenshot({ id: ctx.botId, name: getBotName(ctx.botId) }), summary: 'Captured desktop' }),
+  },
+  {
+    name: 'desktop_close',
+    description: 'Close your persistent desktop browser (opened by desktop_open). Frees ~300-400 MB. Always close it when you are done with the desktop.',
+    parameters: obj({}),
+    activity: 'working',
+    label: 'Closing the desktop browser',
+    impl: async (_a, ctx) => ({ output: await desktopClose({ id: ctx.botId, name: getBotName(ctx.botId) }), summary: 'Closed desktop browser' }),
   },
   {
     name: 'save_file',

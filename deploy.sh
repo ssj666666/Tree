@@ -280,6 +280,22 @@ for d in 11 12 13 14 15; do
   if [ -S "/tmp/.X11-unix/X${d}" ]; then echo "display :${d} ok"; else echo "WARNING: display :${d} is not up — browse_page will fall back to headless mode"; fi
 done
 
+echo "== 4e. Mouse/keyboard tools (xdotool + ImageMagick, for step 7 desktop tools) =="
+# Step 7 (Computer Use): the bots drive their own virtual screens with a
+# mouse and keyboard. xdotool (EPEL) sends mouse/keyboard events to an X
+# display; ImageMagick's `import` captures the whole desktop for
+# desktop_screenshot. Without them, the desktop_* tools report "not
+# installed" at runtime instead of crashing. NOTHING here may kill the
+# deploy (set -e): without these tools the bots just lose the mouse.
+if command -v dnf >/dev/null 2>&1; then
+  dnf install -y epel-release 2>/dev/null || true
+  dnf install -y xdotool ImageMagick 2>/dev/null || echo "WARNING: xdotool/ImageMagick install failed — desktop_* tools will report 'not installed' until they are installed (dnf install -y xdotool ImageMagick)"
+elif command -v apt-get >/dev/null 2>&1; then
+  apt-get update && apt-get install -y xdotool imagemagick 2>/dev/null || echo "WARNING: xdotool/imagemagick install failed — desktop_* tools will report 'not installed'"
+fi
+command -v xdotool >/dev/null 2>&1 && echo "xdotool ok: $(xdotool --version | head -1)" || echo "WARNING: xdotool not found"
+command -v import >/dev/null 2>&1 && echo "import ok: $(import -version 2>/dev/null | head -1)" || echo "WARNING: ImageMagick import not found"
+
 echo "== 5. systemd service =="
 NPM_BIN="$(command -v npm)"
 cat > /etc/systemd/system/tree.service <<EOF

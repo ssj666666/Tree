@@ -95,8 +95,8 @@ export function botScreen(bot: { id: string; name: string }): BotScreen {
   };
 }
 
-/** Is an X server listening on this display? (Xvfb creates /tmp/.X11-unix/X<n>.) */
-function displayReady(display: number): boolean {
+/** Is an X server listening on this display? (Xvfb creates /tmp/.X11-unix/X<n>.) Exported for desktoptools.ts. */
+export function displayReady(display: number): boolean {
   try {
     return fs.existsSync(`/tmp/.X11-unix/X${display}`);
   } catch {
@@ -124,8 +124,9 @@ function proxyFromEnv(): { server: string; bypass: string; username?: string; pa
  * Launch Chromium on this bot's own screen with its own persistent
  * profile. Headed when the bot's Xvfb display is up, headless otherwise.
  * The caller MUST close the returned context (it closes the browser too).
+ * Exported for desktoptools.ts (the persistent desktop browser reuses it).
  */
-async function launchBotContext(screen: BotScreen): Promise<{ context: BrowserContext; headed: boolean }> {
+export async function launchBotContext(screen: BotScreen): Promise<{ context: BrowserContext; headed: boolean }> {
   const proxy = proxyFromEnv();
   const headed = displayReady(screen.display);
   const context = await chromium.launchPersistentContext(screen.profileDir, {
