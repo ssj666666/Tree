@@ -7,14 +7,15 @@ Date: 2026-11-18. User asked: "怎么样才能让agent像一个人一样帮我�
 New file `server/src/agent/desktoptools.ts` — 7 tools, all scoped to the bot's OWN Xvfb display (1280x800; Quinn :11, Scout :12, Forge :13, Ledger :14, Brief :15).
 
 X level (xdotool, works on any window on the display):
-- `desktop_click(x, y)` — move mouse + left-click. Coordinates clamped to 0-1279 / 0-799; out-of-range is refused with the bounds.
-- `desktop_type(text)` — type into the focused field (cap 2000 chars/call).
-- `desktop_key(key)` — press a key. Allowlisted: Return/Tab/Escape/arrows/Home/End/Page_Up/Page_Down/F1-F12, plus ctrl/alt/shift + one letter/digit (e.g. ctrl+l).
 - `desktop_screenshot()` — full 1280x800 desktop capture (ImageMagick `import -window root`) to `data/screenshots/<bot>-desktop.png`. Shows the mouse cursor and every window, unlike `take_screenshot` (browser page only).
+- The real mouse cursor (xdotool) is moved to the matching screen spot on every `desktop_click`, so the user sees it move like a person's. xdotool is also the fallback for click/type/key when no desktop browser is open.
 
 Browser level (persistent headed Chromium kept open on the bot's display):
 - `desktop_open(url)` — open a URL in the persistent desktop browser (one tab per bot, bot's persistent profile). Returns title + text snippet + screenshot path. Reuses the open browser; `page.goto` when already open.
 - `desktop_click_text(text)` — click the element whose visible text matches (Playwright getByText). This is the vision-free click: the model is a text model and cannot look at a screenshot to find coordinates, so it clicks by the text it already read. Returns the page title + URL after the click.
+- `desktop_click(x, y)` — click at page (viewport) coordinates. When a desktop browser is open it uses Playwright's mouse (exact viewport coordinates, no offset math, focuses + clicks reliably) and also moves the xdotool cursor to the matching screen spot. When no browser is open it falls back to a raw xdotool screen click. Coordinates clamped to 0-1279 / 0-799; out-of-range is refused with the bounds.
+- `desktop_type(text)` — type into the focused field (cap 2000 chars/call). When a desktop browser is open it uses Playwright's keyboard (handles any language including Chinese). xdotool `type` is the fallback; it depends on the X keymap and can silently drop characters it cannot map.
+- `desktop_key(key)` — press a key (Playwright keyboard when a browser is open, xdotool otherwise). Allowlisted: Return/Tab/Escape/arrows/Home/End/Page_Up/Page_Down/F1-F12, plus ctrl/alt/shift + one letter/digit (e.g. ctrl+l).
 - `desktop_close()` — close the persistent browser (frees ~300-400 MB). Prompt tells bots to close when done.
 
 ## Why two click paths (the vision problem)
@@ -35,18 +36,29 @@ DeepSeek is a text model: it cannot look at a screenshot and tell where a button
 - ImageMagick 6.9.13 (`dnf install -y ImageMagick`) for `import`.
 - Xvfb already running on :11-:15 (1280x800x24) since 09:08 today.
 
-## Verification
+## Verification (all passed, 2026-11-18)
 
 VM (typecheck + build pass; smoke test with a fake Forge bot):
 - All 7 functions fail gracefully without Xvfb/tools (no crash): "screen :13 not up", out-of-range refusal with bounds, bad-key refusal with the allowlist, "no desktop browser yet" for click_text/close.
 - desktop_open + desktop_close lifecycle works headless on the VM (example.com failed with ERR_TUNNEL_CONNECTION_FAILED — VM proxy issue, not code; browser launched and closed cleanly).
 
-Server (after deploy + restart) — acceptance test to run:
-1. Forge opens a test page in its persistent desktop browser (a local HTML page with a button that changes text/colour on click).
-2. desktop_screenshot (before) — verify the button is visible.
-3. desktop_click on the button's coordinates (or desktop_click_text by its label).
-4. desktop_screenshot (after) — verify the button changed.
-5. Ask Forge via the API to use the tools (e.g. open a page and click by text) and confirm the result.
+Server (after deploy + restart) — acceptance test, Forge's display :13, test page http://127.0.0.1:8899/mouse-test.html (two buttons + one input):
+- desktop_open: opened the page in Forge's persistent desktop browser.
+- desktop_click_text("点我（按文字）"): button turned GREEN, text "文字点击成功 ✓".
+- desktop_click(870, 400) by coordinates: button turned BLUE, text "坐标点击成功 ✓".
+- desktop_click(640, 545) on the input + desktop_type("你好鼠标"): input shows "你好鼠标".
+- desktop_screenshot (before/after) saved to data/screenshots/forge-desktop.png; verified by viewing the images.
+- desktop_key Tab: pressed without error.
+- Mouse location confirmed via `xdotool getmouselocation` (cursor tracks the clicks).
+
+Agent-level test (Forge itself, via the API):
+- Asked Forge to open the test page, click "点我（按文字）" by text, click the input, type "Forge来过", and screenshot. Forge did all of it (11 tool calls: desktop_open, desktop_click_text, desktop_click, desktop_type, desktop_screenshot, desktop_close, plus run_shell pixel checks) and verified the result itself by counting pixels in the screenshot (green #4CAF50 area = button clicked; 645 dark pixels inside the input = text present). Independent check of the screenshot confirms: green "文字点击成功 ✓", input "Forge来过", the other button untouched.
+
+## Debugging notes (what went wrong along the way)
+
+1. **Test page quoting bug.** The first test page was written via an SSH heredoc; the shell stripped the single quotes inside the inline `onclick="... '...' ..."` attributes, so the handler was invalid JS (`SyntaxError: Invalid or unexpected token`) and no click could fire it — even a JS `.click()` did nothing. Fix: rewrote the page with `addEventListener` in a `<script>` block, delivered via base64 (no shell quoting). Lesson: never write HTML/JS with quotes through a shell heredoc; use base64 or a file write.
+2. **Coordinate offset.** The browser window sits at (10,10) and is 1288x931 on a 1280x800 screen, so page (viewport) coordinates are ~140px above the matching screen coordinates (tab bar + address bar). Raw xdotool clicks at viewport coordinates missed small targets (buttons are 100px tall so they tolerated it; the 56px input did not). Fix: desktop_click/type/key now prefer Playwright (page.mouse / page.keyboard) at exact viewport coordinates when a desktop browser is open, and desktop_click also moves the real xdotool cursor to the matching screen spot so the user sees it move. xdotool remains the fallback when no browser is open. xdotool `type` also silently drops characters the X keymap cannot map (a CJK risk), which is why Playwright keyboard is preferred for typing.
+3. **Window taller than the screen.** The browser window (931px) is taller than the 1280x800 X display, so the bottom ~140px of the page viewport is off-screen and not clickable by the real mouse. Playwright clicks still work there (they are synthetic), but the visible cursor cannot reach them. Known limitation; the agent should scroll or click higher up. A future fix is to launch the desktop browser with a smaller viewport (e.g. 1280x650) so the whole window fits.
 
 ## Known limits
 

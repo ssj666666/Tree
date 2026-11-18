@@ -154,17 +154,90 @@ export async function desktopClick(bot: { id: string; name: string }, x: number,
   const cy = Math.floor(Number(y));
   if (!Number.isFinite(cx) || !Number.isFinite(cy)) return '坐标必须是数字，例如 (640, 400)。';
   if (cx < 0 || cx >= SCREEN_W || cy < 0 || cy >= SCREEN_H) {
-    return `坐标 (${cx}, ${cy}) 超出了你的屏幕（1280x800，x 是 0-${SCREEN_W - 1}，y 是 0-${SCREEN_H - 1}）。`;
+    return `坐标 (${cx}, ${cy}) 超出了 1280x800 的范围（x 是 0-${SCREEN_W - 1}，y 是 0-${SCREEN_H - 1}）。`;
   }
   if (!displayReady(screen.display)) return `你的虚拟屏幕 :${screen.display} 未启动，点不了。请告诉用户。`;
+  // Prefer the desktop browser: Playwright's mouse clicks at exact page
+  // (viewport) coordinates — no offset math, and it focuses + clicks
+  // reliably. The real mouse cursor is moved to the matching screen spot
+  // as well, so the user sees it move like a person's.
+  const page = openDesktopPage(bot);
+  if (page) {
+    try {
+      await page.mouse.click(cx, cy);
+    } catch (e: any) {
+      logCall({ tool: 'desktop_click', bot: screen.slug, display: screen.display, x: cx, y: cy, ok: false, error: String(e?.message ?? e).split('\n')[0] });
+      return `点击 (${cx}, ${cy}) 失败：${String(e?.message ?? e).split('\n')[0]}。`;
+    }
+    const off = await viewportOffset(bot);
+    if (off && (await toolAvailable('xdotool'))) {
+      const sx = cx + off.dx;
+      const sy = cy + off.dy;
+      if (sx >= 0 && sx < SCREEN_W && sy >= 0 && sy < SCREEN_H) {
+        await runOnDisplay(screen.display, 'xdotool', ['mousemove', String(sx), String(sy)]).catch(() => {});
+      }
+    }
+    logCall({ tool: 'desktop_click', bot: screen.slug, display: screen.display, x: cx, y: cy, ok: true, via: 'playwright' });
+    return `已在你的屏幕 :${screen.display} 上点击 (${cx}, ${cy})。想确认点中了什么，用 desktop_screenshot 看一眼。`;
+  }
+  // No desktop browser: raw screen click with the real mouse (xdotool).
   if (!(await toolAvailable('xdotool'))) return '鼠标工具 xdotool 还没装在服务器上（deploy.sh 里的 4c 步会装）。请告诉用户。';
   const r = await runOnDisplay(screen.display, 'xdotool', ['mousemove', String(cx), String(cy), 'click', '1']);
   if (r.code !== 0) {
     logCall({ tool: 'desktop_click', bot: screen.slug, display: screen.display, x: cx, y: cy, ok: false, error: (r.stderr || r.stdout).split('\n')[0] });
     return `点击 (${cx}, ${cy}) 失败：${(r.stderr || r.stdout).split('\n')[0] || 'xdotool 退出码 ' + r.code}。`;
   }
-  logCall({ tool: 'desktop_click', bot: screen.slug, display: screen.display, x: cx, y: cy, ok: true });
+  logCall({ tool: 'desktop_click', bot: screen.slug, display: screen.display, x: cx, y: cy, ok: true, via: 'xdotool' });
   return `已在你的屏幕 :${screen.display} 上点击 (${cx}, ${cy})。想确认点中了什么，用 desktop_screenshot 看一眼。`;
+}
+
+/** The open desktop browser's page, or null when there is none. */
+function openDesktopPage(bot: { id: string; name: string }): Page | null {
+  const screen = screenOf(bot);
+  const entry = desktopBrowsers.get(screen.slug);
+  if (!entry || !entry.page || entry.page.isClosed()) return null;
+  return entry.page;
+}
+
+/** Map our key names to Playwright keyboard names. */
+function toPlaywrightKey(k: string): string {
+  const named: Record<string, string> = {
+    Return: 'Enter', Tab: 'Tab', Escape: 'Escape', space: 'Space',
+    BackSpace: 'Backspace', Delete: 'Delete',
+    Up: 'ArrowUp', Down: 'ArrowDown', Left: 'ArrowLeft', Right: 'ArrowRight',
+    Home: 'Home', End: 'End', Page_Up: 'PageUp', Page_Down: 'PageDown',
+  };
+  const m = k.match(/^(ctrl|alt|shift)\+(.+)$/);
+  if (m) {
+    const mod = m[1] === 'ctrl' ? 'Control' : m[1] === 'alt' ? 'Alt' : 'Shift';
+    const base = named[m[2]] ?? m[2];
+    return `${mod}+${base}`;
+  }
+  if (/^F\d+$/.test(k)) return k;
+  return named[k] ?? k;
+}
+
+/** Measure the page-viewport-to-screen offset from the open desktop browser. */
+async function viewportOffset(bot: { id: string; name: string }): Promise<{ dx: number; dy: number } | null> {
+  const screen = screenOf(bot);
+  const entry = desktopBrowsers.get(screen.slug);
+  if (!entry || !entry.page || entry.page.isClosed()) return null;
+  try {
+    const m = await entry.page.evaluate(() => ({
+      screenX: window.screenX,
+      screenY: window.screenY,
+      outerW: window.outerWidth,
+      outerH: window.outerHeight,
+      innerW: window.innerWidth,
+      innerH: window.innerHeight,
+    }));
+    return {
+      dx: Math.round(m.screenX + (m.outerW - m.innerW) / 2),
+      dy: Math.round(m.screenY + (m.outerH - m.innerH)),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function desktopType(bot: { id: string; name: string }, text: string): Promise<string> {
@@ -173,13 +246,29 @@ export async function desktopType(bot: { id: string; name: string }, text: strin
   if (!t) return '没有给要输入的文字。';
   if (t.length > MAX_TYPE_CHARS) return `要输入的文字太长（${t.length} 字，单次上限 ${MAX_TYPE_CHARS} 字）。分几次输入。`;
   if (!displayReady(screen.display)) return `你的虚拟屏幕 :${screen.display} 未启动，输不了字。请告诉用户。`;
+  // Prefer the desktop browser: Playwright's keyboard types any language
+  // (including Chinese) into the focused field, reliably. xdotool's
+  // `type` depends on the X keymap and silently drops characters it
+  // cannot map, so it is only the fallback when no browser is open.
+  const page = openDesktopPage(bot);
+  if (page) {
+    try {
+      await page.keyboard.type(t);
+    } catch (e: any) {
+      logCall({ tool: 'desktop_type', bot: screen.slug, display: screen.display, chars: t.length, ok: false, error: String(e?.message ?? e).split('\n')[0] });
+      return `输入文字失败：${String(e?.message ?? e).split('\n')[0]}。`;
+    }
+    logCall({ tool: 'desktop_type', bot: screen.slug, display: screen.display, chars: t.length, ok: true, via: 'playwright' });
+    return `已在你的屏幕 :${screen.display} 上输入 ${t.length} 个字符（打进了当前获得焦点的输入框）。`;
+  }
+  // No desktop browser: type with the real keyboard (xdotool).
   if (!(await toolAvailable('xdotool'))) return '键盘工具 xdotool 还没装在服务器上（deploy.sh 里的 4c 步会装）。请告诉用户。';
   const r = await runOnDisplay(screen.display, 'xdotool', ['type', '--', t]);
   if (r.code !== 0) {
     logCall({ tool: 'desktop_type', bot: screen.slug, display: screen.display, chars: t.length, ok: false, error: (r.stderr || r.stdout).split('\n')[0] });
     return `输入文字失败：${(r.stderr || r.stdout).split('\n')[0] || 'xdotool 退出码 ' + r.code}。`;
   }
-  logCall({ tool: 'desktop_type', bot: screen.slug, display: screen.display, chars: t.length, ok: true });
+  logCall({ tool: 'desktop_type', bot: screen.slug, display: screen.display, chars: t.length, ok: true, via: 'xdotool' });
   return `已在你的屏幕 :${screen.display} 上输入 ${t.length} 个字符（打进了当前获得焦点的输入框）。`;
 }
 
@@ -188,13 +277,26 @@ export async function desktopKey(bot: { id: string; name: string }, key: string)
   const k = validKey(key);
   if (!k) return `按键 "${String(key ?? '')}" 不支持。能用的按键：Return、Tab、Escape、方向键、Home/End、Page_Up/Page_Down、F1-F12，以及 ctrl/alt/shift + 单个字母或数字（例如 ctrl+l、ctrl+c、alt+Tab）。`;
   if (!displayReady(screen.display)) return `你的虚拟屏幕 :${screen.display} 未启动，按不了键。请告诉用户。`;
+  // Prefer the desktop browser (Playwright keyboard); xdotool is the
+  // fallback when no browser is open.
+  const page = openDesktopPage(bot);
+  if (page) {
+    try {
+      await page.keyboard.press(toPlaywrightKey(k));
+    } catch (e: any) {
+      logCall({ tool: 'desktop_key', bot: screen.slug, display: screen.display, key: k, ok: false, error: String(e?.message ?? e).split('\n')[0] });
+      return `按键 ${k} 失败：${String(e?.message ?? e).split('\n')[0]}。`;
+    }
+    logCall({ tool: 'desktop_key', bot: screen.slug, display: screen.display, key: k, ok: true, via: 'playwright' });
+    return `已在你的屏幕 :${screen.display} 上按下 ${k}。`;
+  }
   if (!(await toolAvailable('xdotool'))) return '键盘工具 xdotool 还没装在服务器上（deploy.sh 里的 4c 步会装）。请告诉用户。';
   const r = await runOnDisplay(screen.display, 'xdotool', ['key', k]);
   if (r.code !== 0) {
     logCall({ tool: 'desktop_key', bot: screen.slug, display: screen.display, key: k, ok: false, error: (r.stderr || r.stdout).split('\n')[0] });
     return `按键 ${k} 失败：${(r.stderr || r.stdout).split('\n')[0] || 'xdotool 退出码 ' + r.code}。`;
   }
-  logCall({ tool: 'desktop_key', bot: screen.slug, display: screen.display, key: k, ok: true });
+  logCall({ tool: 'desktop_key', bot: screen.slug, display: screen.display, key: k, ok: true, via: 'xdotool' });
   return `已在你的屏幕 :${screen.display} 上按下 ${k}。`;
 }
 

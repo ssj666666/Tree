@@ -187,7 +187,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'desktop_click',
-    description: 'Move the mouse and left-click at coordinates (x, y) on YOUR OWN virtual screen (1280x800). This is the raw mouse — use it for canvas, maps, or a spot the user points at by coordinates. For buttons/links whose text you already read, prefer desktop_click_text (no guessing coordinates). Coordinates outside 0-1279 / 0-799 are refused. Confirm what the click did with desktop_screenshot.',
+    description: 'Move the mouse and left-click at coordinates (x, y) on YOUR OWN virtual screen. Coordinates are PAGE coordinates (the web page in your desktop browser, 1280x800) — the ones the page reports, e.g. from an element\'s bounding box. The tool converts them to screen coordinates for the real mouse (the browser\'s tab bar and address bar sit above the page). If no desktop browser is open, the coordinates are taken as raw screen coordinates instead. Use it for canvas, maps, or a spot the user points at by coordinates. For buttons/links whose text you already read, prefer desktop_click_text (no guessing coordinates). Confirm what the click did with desktop_screenshot.',
     parameters: obj({ x: { type: 'integer', description: 'Horizontal position, 0-1279' }, y: { type: 'integer', description: 'Vertical position, 0-799' } }, ['x', 'y']),
     activity: 'working',
     label: 'Clicking on the screen',
