@@ -10,6 +10,8 @@ const sources = {
   house: 'shapes/house-orange.svg', sparkle: 'shapes/sparkle-orange.svg', square: 'shapes/square-orange.svg',
   star: 'shapes/star-orange.svg', tablet: 'shapes/tablet-orange.svg', teardrop: 'shapes/teardrop-orange.svg',
   wedge: 'shapes/wedge-orange.svg',
+  compass: 'shapes/compass-orange.svg', telescope: 'shapes/telescope-orange.svg',
+  anvil: 'shapes/anvil-orange.svg', ledger: 'shapes/ledger-orange.svg', newspaper: 'shapes/newspaper-orange.svg',
   // Extra silhouettes only present as rendered avatars.
   egg: 'avatars/dr-eggbot-yc-bookface.svg', pebble: 'avatars/jules-personal-website.svg',
 };

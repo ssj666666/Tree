@@ -14,7 +14,7 @@ export function shapeDef(shape: AvatarShape | string): ShapeDef {
 }
 
 /** Shapes offered in the Create New Bot picker, in the design's order (rows of 5/5/3). */
-export const PICKER_SHAPES: AvatarShape[] = ['blob', 'cloud', 'square', 'sparkle', 'clover', 'heart', 'flower', 'teardrop', 'tablet', 'wedge', 'house', 'star', 'hex'];
+export const PICKER_SHAPES: AvatarShape[] = ['blob', 'cloud', 'square', 'sparkle', 'clover', 'heart', 'flower', 'teardrop', 'tablet', 'wedge', 'house', 'star', 'hex', 'compass', 'telescope', 'anvil', 'ledger', 'newspaper'];
 
 interface Props {
   shape: AvatarShape | string;

@@ -32,8 +32,8 @@ export const TEAM_BOTS: TeamBotDef[] = [
     name: 'Quinn',
     label: 'Chief of Staff',
     description: 'Your main point of contact. Checks in proactively and coordinates work with your other Bots.',
-    avatarShape: 'blob',
-    avatarColor: 'black',
+    avatarShape: 'compass',
+    avatarColor: 'green',
     isPrimary: true,
   },
   {
@@ -42,8 +42,8 @@ export const TEAM_BOTS: TeamBotDef[] = [
     description: 'Searches the web for current information and hands you a summary with sources.',
     instructions:
       '你是团队的搜索机器人。用户问到需要联网查的最新信息、资料、价格、新闻时，用 web_search 工具去查（不要靠记忆猜）；回答要简短，先给结论，再列出标题和来源链接。如果搜索未配置或查不到，就直说查不到，不要编造。',
-    avatarShape: 'sparkle',
-    avatarColor: 'cyan',
+    avatarShape: 'telescope',
+    avatarColor: 'blue',
   },
   {
     name: 'Forge',
@@ -51,7 +51,7 @@ export const TEAM_BOTS: TeamBotDef[] = [
     description: 'Writes and fixes code, runs tests, and keeps the workspace in shape. Never touches secrets, never deploys, never pushes to GitHub.',
     instructions:
       '你是团队的编程机器人 Forge。你的工作是写代码、改代码、跑测试、修报错：用 run_shell 跑命令和测试（git 本地提交可以，推送留给操作者），用 read_file/write_file 读写文件，用 fetch_page/browse_page 查文档。改完先跑一遍 typecheck 或测试，跑通了再说完成；跑不通就把报错原文和卡住的地方原样报给 Quinn，不要猜。绝对不要读、不要写 .env、*.key、*.pem 这类密钥文件；不要部署、不要向 GitHub 推送。遵守团队规则。',
-    avatarShape: 'hex',
+    avatarShape: 'anvil',
     avatarColor: 'orange',
   },
   {
@@ -60,8 +60,8 @@ export const TEAM_BOTS: TeamBotDef[] = [
     description: 'Keeps notes, files and the skills library organized, and runs the weekly review. Never deletes user files.',
     instructions:
       '你是团队的整理机器人 Ledger。你的工作是整理：汇总 Skills、维护技能库、整理笔记和文件、做每周复盘。整理前先用 read_file 看清楚再动；只整理归类，不删除用户文件；不改团队规则；不碰密钥文件。每次整理完给一份简短清单：动了什么、放哪了、为什么。遵守团队规则。',
-    avatarShape: 'tablet',
-    avatarColor: 'green',
+    avatarShape: 'ledger',
+    avatarColor: 'violet',
   },
   {
     name: 'Brief',
@@ -69,12 +69,12 @@ export const TEAM_BOTS: TeamBotDef[] = [
     description: 'Writes the daily brief, summaries and digests. Never invents a number.',
     instructions:
       '你是团队的汇报机器人 Brief。你的工作是写日报、摘要、资讯汇总：每天的简报、每周回顾、任何需要“把现状讲清楚”的文字。先给结论，再列要点；数字必须有来源，没有来源的数字不要写进报表，不要编；需要最新信息时先用 web_search 查，并附上来源链接。写完自己读一遍，删掉废话再交。遵守团队规则。',
-    avatarShape: 'gem',
-    avatarColor: 'violet',
+    avatarShape: 'newspaper',
+    avatarColor: 'magenta',
   },
 ];
 
-const SHAPES: AvatarShape[] = ['blob', 'pebble', 'bean', 'egg', 'squircle', 'tablet', 'capsule', 'cylinder', 'hex', 'gem', 'crystal', 'wedge', 'shield', 'dome', 'arch', 'cloud', 'teardrop', 'leaf', 'square', 'sparkle', 'clover', 'flower', 'heart', 'house', 'star'];
+const SHAPES: AvatarShape[] = ['blob', 'pebble', 'bean', 'egg', 'squircle', 'tablet', 'capsule', 'cylinder', 'hex', 'gem', 'crystal', 'wedge', 'shield', 'dome', 'arch', 'cloud', 'teardrop', 'leaf', 'square', 'sparkle', 'clover', 'flower', 'heart', 'house', 'star', 'compass', 'telescope', 'anvil', 'ledger', 'newspaper'];
 const COLORS: AvatarColor[] = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet', 'magenta', 'gray'];
 
 function hashPick<T>(id: string, list: T[]): T {

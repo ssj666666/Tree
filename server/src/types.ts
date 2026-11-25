@@ -3,7 +3,8 @@
 export type AvatarShape =
   | 'blob' | 'pebble' | 'bean' | 'egg' | 'squircle' | 'tablet' | 'capsule' | 'cylinder' | 'hex'
   | 'gem' | 'crystal' | 'wedge' | 'shield' | 'dome' | 'arch' | 'cloud' | 'teardrop' | 'leaf'
-  | 'square' | 'sparkle' | 'clover' | 'flower' | 'heart' | 'house' | 'star';
+  | 'square' | 'sparkle' | 'clover' | 'flower' | 'heart' | 'house' | 'star'
+  | 'compass' | 'telescope' | 'anvil' | 'ledger' | 'newspaper';
 
 export type AvatarColor =
   | 'black' | 'brown' | 'red' | 'orange' | 'yellow' | 'green' | 'cyan' | 'blue' | 'violet' | 'magenta' | 'gray';
