@@ -341,6 +341,17 @@ function restartNotifier() {
   setTimeout(() => { notifier.running = false; startNotifier(); }, 500);
 }
 
+// ------------------------------------------------------- single instance ---
+// A second launch (double-clicking Tree.exe while it is already running)
+// must focus the existing window instead of opening a new one. This is
+// single-instance behaviour: only one copy of the app runs at a time.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => showWindow());
+}
+
 // ------------------------------------------------------------------ boot ---
 app.whenReady().then(() => {
   app.setName(APP_NAME);

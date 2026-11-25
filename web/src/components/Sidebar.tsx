@@ -13,16 +13,6 @@ function initials(name: string) {
   return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
 }
 
-export function TrafficLights() {
-  return (
-    <div className="traffic-lights" aria-hidden>
-      <span style={{ background: '#FF5F57' }} />
-      <span style={{ background: '#FEBC2E' }} />
-      <span style={{ background: '#28C840' }} />
-    </div>
-  );
-}
-
 function previewFor(bot: Bot, running: boolean, awaiting: string | null) {
   if (awaiting) return `Waiting for you: ${awaiting}`;
   if (running && !bot.lastPreview) return 'Working…';
@@ -68,7 +58,6 @@ export function Sidebar() {
   return (
     <aside className={`sidebar${collapsed ? ' is-collapsed' : ''}`}>
       <div className="sidebar__titlebar">
-        <TrafficLights />
         <div className="sidebar__controls">
           <button type="button" className="icon-btn icon-btn--plain" onClick={() => set({ sidebarCollapsed: !collapsed })} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title="Toggle sidebar (⌘B)">
             <Icon name="sidebar" opacity={0.66} />
